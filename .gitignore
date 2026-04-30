@@ -1,0 +1,30 @@
+# Maven
+target/
+.m2/
+dsp408-parent/.m2/
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# IntelliJ
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Java
+*.class

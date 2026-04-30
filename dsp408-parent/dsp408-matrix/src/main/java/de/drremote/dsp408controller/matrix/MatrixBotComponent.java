@@ -1,0 +1,177 @@
+package de.drremote.dsp408controller.matrix;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Modified;
+import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.metatype.annotations.Designate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import de.drremote.dsp408.api.DspService;
+
+@Component(
+        service = MatrixBotComponent.class,
+        immediate = true,
+        configurationPid = "de.drremote.dsp408controller.matrix"
+)
+@Designate(ocd = MatrixBotConfiguration.class)
+public final class MatrixBotComponent {
+    private static final Logger LOG = LoggerFactory.getLogger(MatrixBotComponent.class);
+
+    @Reference
+    private DspService service;
+
+    private final AtomicBoolean running = new AtomicBoolean(false);
+
+    private volatile MatrixRuntimeConfig config;
+    private ExecutorService dspExecutor;
+    private Thread syncThread;
+
+    @Activate
+    void activate(MatrixBotConfiguration configuration) {
+        this.config = MatrixRuntimeConfig.from(configuration);
+        startIfEnabled();
+    }
+
+    @Modified
+    void modified(MatrixBotConfiguration configuration) {
+        stop();
+        this.config = MatrixRuntimeConfig.from(configuration);
+        startIfEnabled();
+    }
+
+    @Deactivate
+    void deactivate() {
+        stop();
+    }
+
+    private synchronized void startIfEnabled() {
+        MatrixRuntimeConfig cfg = this.config;
+
+        if (cfg == null || !cfg.enabled) {
+            LOG.info("Matrix bot is disabled");
+            return;
+        }
+
+        if (!cfg.isValid()) {
+            LOG.warn("Matrix bot configuration is incomplete");
+            return;
+        }
+
+        if (cfg.connectDspOnStart && !service.isConnected()) {
+            try {
+                service.connect();
+            } catch (Exception e) {
+                LOG.warn("DSP not reachable during bot start: {}", e.getMessage());
+            }
+        }
+
+        dspExecutor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "dsp408-matrix-dsp");
+            t.setDaemon(true);
+            return t;
+        });
+
+        running.set(true);
+
+        syncThread = new Thread(() -> runLoop(cfg), "dsp408-matrix-sync");
+        syncThread.setDaemon(true);
+        syncThread.start();
+
+        LOG.info("Matrix bot start requested");
+    }
+
+    private void runLoop(MatrixRuntimeConfig cfg) {
+        while (running.get()) {
+            try {
+                MatrixApiClient api = new MatrixApiClient(cfg.matrixUrl, cfg.accessToken);
+
+                String botUserId = api.whoAmI().path("user_id").asText();
+                LOG.info("Matrix bot user: {}", botUserId);
+
+                String since = api.sync(null, 0).path("next_batch").asText();
+
+                MatrixMessageHandler messageHandler = new MatrixMessageHandler(
+                        cfg,
+                        service,
+                        api,
+                        dspExecutor,
+                        botUserId,
+                        msg -> LOG.info("[MATRIX] {}", msg)
+                );
+
+                LOG.info("Matrix bot started. Control room: {}", cfg.controlRoomId);
+                if (cfg.volumeRoomId != null && !cfg.volumeRoomId.isBlank()) {
+                    LOG.info("Matrix bot volume room: {}", cfg.volumeRoomId);
+                }
+                if (cfg.machineRoomId != null && !cfg.machineRoomId.isBlank()) {
+                    LOG.info("Matrix bot machine room: {}", cfg.machineRoomId);
+                }
+
+                while (running.get()) {
+                    try {
+                        var sync = api.sync(since, cfg.syncTimeoutMs);
+                        since = sync.path("next_batch").asText();
+
+                        var joinedRooms = sync.path("rooms").path("join");
+                        if (!joinedRooms.isObject()) {
+                            continue;
+                        }
+
+                        messageHandler.handleRoomEvents(joinedRooms, cfg.controlRoomId, "control");
+                        messageHandler.handleRoomEvents(joinedRooms, cfg.volumeRoomId, "volume");
+                        messageHandler.handleRoomEvents(joinedRooms, cfg.machineRoomId, "machine");
+
+                    } catch (Exception e) {
+                        if (!running.get()) {
+                            break;
+                        }
+
+                        LOG.warn("Matrix sync error: {}", e.getMessage());
+
+                        try {
+                            Thread.sleep(cfg.reconnectDelayMs);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                }
+
+            } catch (Exception e) {
+                if (!running.get()) {
+                    break;
+                }
+                LOG.error("Matrix bot start/login failed", e);
+                try {
+                    Thread.sleep(cfg.reconnectDelayMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+
+        LOG.info("Matrix bot stopped");
+    }
+
+    private synchronized void stop() {
+        running.set(false);
+
+        if (syncThread != null) {
+            syncThread.interrupt();
+            syncThread = null;
+        }
+
+        if (dspExecutor != null) {
+            dspExecutor.shutdownNow();
+            dspExecutor = null;
+        }
+    }
+}

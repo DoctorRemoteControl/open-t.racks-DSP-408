@@ -1,0 +1,146 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "DSP408 Control API",
+    "version": "0.0.1-SNAPSHOT",
+    "summary": "HTTP/JSON API for controlling and querying a t.racks / Thomann DSP 408",
+    "description": "Covers the decoded DSP408 functions implemented in dsp408-core. Functions marked not_decoded in DspLib-408.json are intentionally not exposed as high-level endpoints. The /api/v1/command endpoint can execute the existing shell command surface as a compatibility fallback."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8181"
+    }
+  ],
+  "tags": [
+    {"name": "meta"},
+    {"name": "connection"},
+    {"name": "device"},
+    {"name": "channels"},
+    {"name": "peq"},
+    {"name": "geq"},
+    {"name": "gate"},
+    {"name": "crossover"},
+    {"name": "matrix"},
+    {"name": "dynamics"},
+    {"name": "test-tone"},
+    {"name": "blocks"},
+    {"name": "volume"},
+    {"name": "debug"}
+  ],
+  "paths": {
+    "/api/v1/health": {"get": {"tags": ["meta"], "summary": "Health check", "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Object"}}}}}}},
+    "/api/v1/help": {"get": {"tags": ["meta"], "summary": "Get shell help text", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/openapi.json": {"get": {"tags": ["meta"], "summary": "Get this OpenAPI document", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/state": {"get": {"tags": ["device"], "summary": "Get known DSP state", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/status": {"get": {"tags": ["device"], "summary": "Alias for state", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/device": {"get": {"tags": ["device"], "summary": "Get device info", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/deviceinfo": {"get": {"tags": ["device"], "summary": "Alias for device info", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/info": {"get": {"tags": ["device"], "summary": "Alias for device info", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/device/login": {"post": {"tags": ["device"], "summary": "Send login PIN", "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/connection/connect": {"post": {"tags": ["connection"], "summary": "Connect to DSP", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/connection/reconnect": {"post": {"tags": ["connection"], "summary": "Reconnect to DSP", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/connection/disconnect": {"post": {"tags": ["connection"], "summary": "Disconnect from DSP", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/command": {"post": {"tags": ["debug"], "summary": "Execute shell or matrix command", "description": "Body: line, optional mode=shell|matrix, optional admin=true|false.", "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/channels": {"get": {"tags": ["channels"], "summary": "List channels", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/channels/{channelId}": {"get": {"tags": ["channels"], "summary": "Get channel", "parameters": [{"$ref": "#/components/parameters/channelId"}], "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/channels/{channelId}/name": {"post": {"tags": ["channels"], "summary": "Set channel name", "parameters": [{"$ref": "#/components/parameters/channelId"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/gain": {"post": {"tags": ["channels"], "summary": "Set gain", "parameters": [{"$ref": "#/components/parameters/channelId"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/channels/{channelId}/mute": {"post": {"tags": ["channels"], "summary": "Mute channel", "parameters": [{"$ref": "#/components/parameters/channelId"}], "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/channels/{channelId}/unmute": {"post": {"tags": ["channels"], "summary": "Unmute channel", "parameters": [{"$ref": "#/components/parameters/channelId"}], "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/channels/{channelId}/phase": {"post": {"tags": ["channels"], "summary": "Set phase", "parameters": [{"$ref": "#/components/parameters/channelId"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/channels/{channelId}/delay": {"post": {"tags": ["channels"], "summary": "Set delay", "parameters": [{"$ref": "#/components/parameters/channelId"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/delay-unit": {"post": {"tags": ["channels"], "summary": "Set delay unit", "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/preset/load": {"post": {"tags": ["device"], "summary": "Load preset by slot or index", "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/preset/name/read": {"post": {"tags": ["device"], "summary": "Request preset name", "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/peq/{peqIndex}": {"post": {"tags": ["peq"], "summary": "Set full output PEQ band", "parameters": [{"$ref": "#/components/parameters/channelId"}, {"$ref": "#/components/parameters/peqIndex"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/peq/{peqIndex}/frequency": {"post": {"tags": ["peq"], "summary": "Set output PEQ frequency", "parameters": [{"$ref": "#/components/parameters/channelId"}, {"$ref": "#/components/parameters/peqIndex"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/peq/{peqIndex}/q": {"post": {"tags": ["peq"], "summary": "Set output PEQ Q", "parameters": [{"$ref": "#/components/parameters/channelId"}, {"$ref": "#/components/parameters/peqIndex"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/peq/{peqIndex}/q/raw": {"post": {"tags": ["peq"], "summary": "Set output PEQ raw Q", "parameters": [{"$ref": "#/components/parameters/channelId"}, {"$ref": "#/components/parameters/peqIndex"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/peq/{peqIndex}/gain": {"post": {"tags": ["peq"], "summary": "Set output PEQ gain", "parameters": [{"$ref": "#/components/parameters/channelId"}, {"$ref": "#/components/parameters/peqIndex"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/peq/{peqIndex}/gain/code": {"post": {"tags": ["peq"], "summary": "Set output PEQ raw gain code", "parameters": [{"$ref": "#/components/parameters/channelId"}, {"$ref": "#/components/parameters/peqIndex"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/peq/{peqIndex}/type": {"post": {"tags": ["peq"], "summary": "Set output PEQ type", "parameters": [{"$ref": "#/components/parameters/channelId"}, {"$ref": "#/components/parameters/peqIndex"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/input-peq/{peqIndex}": {"post": {"tags": ["peq"], "summary": "Set full input PEQ band", "parameters": [{"$ref": "#/components/parameters/channelId"}, {"$ref": "#/components/parameters/peqIndex"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/input-peq/{peqIndex}/{field}": {"post": {"tags": ["peq"], "summary": "Set input PEQ field: frequency, q, gain, type, bypass", "parameters": [{"$ref": "#/components/parameters/channelId"}, {"$ref": "#/components/parameters/peqIndex"}, {"name": "field", "in": "path", "required": true, "schema": {"type": "string"}}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/geq/{bandIndex}/gain": {"post": {"tags": ["geq"], "summary": "Set input GEQ band gain", "parameters": [{"$ref": "#/components/parameters/channelId"}, {"name": "bandIndex", "in": "path", "required": true, "schema": {"type": "integer", "minimum": 1, "maximum": 31}}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/gate": {"post": {"tags": ["gate"], "summary": "Set full input gate", "parameters": [{"$ref": "#/components/parameters/channelId"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/gate/{field}": {"post": {"tags": ["gate"], "summary": "Set gate field: threshold, hold, attack, release", "parameters": [{"$ref": "#/components/parameters/channelId"}, {"name": "field", "in": "path", "required": true, "schema": {"type": "string"}}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/crossover/{filter}": {"post": {"tags": ["crossover"], "summary": "Set crossover filter hp or lp", "parameters": [{"$ref": "#/components/parameters/channelId"}, {"name": "filter", "in": "path", "required": true, "schema": {"type": "string"}}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/crossover/{filter}/{field}": {"post": {"tags": ["crossover"], "summary": "Set crossover field: frequency, slope, bypass", "parameters": [{"$ref": "#/components/parameters/channelId"}, {"name": "filter", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "field", "in": "path", "required": true, "schema": {"type": "string"}}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/matrix/route": {"post": {"tags": ["matrix"], "summary": "Set output route", "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/matrix/crosspoint-gain": {"post": {"tags": ["matrix"], "summary": "Set matrix crosspoint gain", "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/compressor": {"post": {"tags": ["dynamics"], "summary": "Set output compressor", "parameters": [{"$ref": "#/components/parameters/channelId"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/channels/{channelId}/limiter": {"post": {"tags": ["dynamics"], "summary": "Set output limiter", "parameters": [{"$ref": "#/components/parameters/channelId"}], "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/test-tone/source": {"post": {"tags": ["test-tone"], "summary": "Set test tone source", "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/test-tone/sine": {"post": {"tags": ["test-tone"], "summary": "Set test tone sine frequency by hz or raw selector", "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/test-tone/off": {"post": {"tags": ["test-tone"], "summary": "Disable test tone", "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/meters/read": {"post": {"tags": ["device"], "summary": "Request runtime meters", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/blocks": {"get": {"tags": ["blocks"], "summary": "List cached block indices", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/blocks/{blockIndex}": {"get": {"tags": ["blocks"], "summary": "Get cached block", "parameters": [{"$ref": "#/components/parameters/blockIndex"}], "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/blocks/{blockIndex}/read": {"post": {"tags": ["blocks"], "summary": "Read one block", "parameters": [{"$ref": "#/components/parameters/blockIndex"}], "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/blocks/scan": {"post": {"tags": ["blocks"], "summary": "Scan all parameter blocks", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/scanblocks": {"post": {"tags": ["blocks"], "summary": "Alias for scan", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/refresh": {"post": {"tags": ["blocks"], "summary": "Alias for scan", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/raw": {"post": {"tags": ["debug"], "summary": "Send raw DSP payload", "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/RawTxResponse"}}}},
+    "/api/v1/volume": {"get": {"tags": ["volume"], "summary": "Volume status", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/volume/status": {"get": {"tags": ["volume"], "summary": "Volume status alias", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/volume/help": {"get": {"tags": ["volume"], "summary": "Volume help", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/volume/up": {"post": {"tags": ["volume"], "summary": "Volume up", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/volume/down": {"post": {"tags": ["volume"], "summary": "Volume down", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/volume/mute": {"post": {"tags": ["volume"], "summary": "Volume mute", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/volume/unmute": {"post": {"tags": ["volume"], "summary": "Volume unmute", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/volume/refresh": {"post": {"tags": ["volume"], "summary": "Volume refresh", "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/volume/set": {"post": {"tags": ["volume"], "summary": "Set grouped input volume", "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}},
+    "/api/v1/volume/step": {"post": {"tags": ["volume"], "summary": "Step grouped input volume", "requestBody": {"$ref": "#/components/requestBodies/ObjectBody"}, "responses": {"200": {"$ref": "#/components/responses/ObjectResponse"}}}}
+  },
+  "components": {
+    "parameters": {
+      "channelId": {"name": "channelId", "in": "path", "required": true, "schema": {"type": "string"}, "description": "ina, inb, inc, ind, out1..out8 or accepted core aliases"},
+      "peqIndex": {"name": "peqIndex", "in": "path", "required": true, "schema": {"type": "integer", "minimum": 1, "maximum": 9}},
+      "blockIndex": {"name": "blockIndex", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^(0x)?[0-9A-Fa-f]{1,2}$"}}
+    },
+    "requestBodies": {
+      "ObjectBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {"$ref": "#/components/schemas/Object"}
+          }
+        }
+      }
+    },
+    "responses": {
+      "ObjectResponse": {
+        "description": "JSON response",
+        "content": {
+          "application/json": {
+            "schema": {"$ref": "#/components/schemas/Object"}
+          }
+        }
+      },
+      "RawTxResponse": {
+        "description": "Transmitted DSP payload/frame",
+        "content": {
+          "application/json": {
+            "schema": {"$ref": "#/components/schemas/RawTxDto"}
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Object": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "RawTxDto": {
+        "type": "object",
+        "required": ["payloadHex", "frameHex", "payloadLength", "frameLength"],
+        "properties": {
+          "payloadHex": {"type": "string"},
+          "frameHex": {"type": "string"},
+          "payloadLength": {"type": "integer"},
+          "frameLength": {"type": "integer"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,58 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<parent>
+		<groupId>de.drremote</groupId>
+		<artifactId>dsp408-parent</artifactId>
+		<version>0.0.1-SNAPSHOT</version>
+	</parent>
+
+	<artifactId>dsp408-core</artifactId>
+	<packaging>jar</packaging>
+
+
+	<dependencies>
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-databind</artifactId>
+			<version>2.17.2</version>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<artifactId>maven-jar-plugin</artifactId>
+				<configuration>
+					<archive>
+						<manifestFile>
+							${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
+					</archive>
+				</configuration>
+			</plugin>
+
+			<plugin>
+				<groupId>biz.aQute.bnd</groupId>
+				<artifactId>bnd-maven-plugin</artifactId>
+				<configuration>
+					<bnd><![CDATA[
+Bundle-SymbolicName: de.drremote.dsp408.core
+Bundle-Name: DSP408 Core
+Bundle-Version: ${project.version}
+
+Export-Package: \
+ de.drremote.dsp408controller.core.net,\
+ de.drremote.dsp408controller.core.protocol,\
+ de.drremote.dsp408controller.core.service,\
+ de.drremote.dsp408controller.core.state,\
+ de.drremote.dsp408controller.command,\
+ de.drremote.dsp408controller.format,\
+ de.drremote.dsp408controller.util
+                    ]]></bnd>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+</project>
