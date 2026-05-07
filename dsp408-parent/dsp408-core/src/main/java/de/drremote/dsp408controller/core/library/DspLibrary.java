@@ -4,12 +4,16 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
 import de.drremote.dsp408controller.core.protocol.DspChannel;
 
 public final class DspLibrary {
+    private final String libraryType;
+    private final int maxParameterBlockIndex;
+
     private final Map<Integer, List<DspFieldLocation>> gainReadLocationsByBlock;
     private final Map<Integer, List<DspFieldLocation>> phaseReadLocationsByBlock;
     private final Map<Integer, List<DspFieldLocation>> delayReadLocationsByBlock;
@@ -37,7 +41,9 @@ public final class DspLibrary {
 
     private final MuteReadSpec muteReadSpec;
 
-    public DspLibrary(Map<Integer, List<DspFieldLocation>> gainReadLocationsByBlock,
+    public DspLibrary(String libraryType,
+                      int maxParameterBlockIndex,
+                      Map<Integer, List<DspFieldLocation>> gainReadLocationsByBlock,
                       Map<Integer, List<DspFieldLocation>> phaseReadLocationsByBlock,
                       Map<Integer, List<DspFieldLocation>> delayReadLocationsByBlock,
                       Map<DspChannel, MatrixRouteLocation> matrixRouteLocations,
@@ -56,6 +62,9 @@ public final class DspLibrary {
                       MeterLayout meterLayout,
                       TestToneReadSpec testToneReadSpec,
                       MuteReadSpec muteReadSpec) {
+        this.libraryType = libraryType == null || libraryType.isBlank() ? "unknown" : libraryType;
+        this.maxParameterBlockIndex = maxParameterBlockIndex;
+
         this.gainReadLocationsByBlock = copyLocationsByBlock(gainReadLocationsByBlock);
         this.phaseReadLocationsByBlock = copyLocationsByBlock(phaseReadLocationsByBlock);
         this.delayReadLocationsByBlock = copyLocationsByBlock(delayReadLocationsByBlock);
@@ -82,6 +91,18 @@ public final class DspLibrary {
         this.testToneReadSpec = testToneReadSpec;
 
         this.muteReadSpec = muteReadSpec;
+    }
+
+    public String libraryType() {
+        return libraryType;
+    }
+
+    public int maxParameterBlockIndex() {
+        return maxParameterBlockIndex;
+    }
+
+    public boolean hasFirFeatures() {
+        return libraryType.toLowerCase(Locale.ROOT).contains("fir");
     }
 
     private static Map<Integer, List<DspFieldLocation>> copyLocationsByBlock(Map<Integer, List<DspFieldLocation>> in) {
@@ -188,6 +209,10 @@ public final class DspLibrary {
 
     public List<CompressorChannelLocation> compressorLocationsForBlock(int blockIndex) {
         return compressorLocationsByBlock.getOrDefault(blockIndex, List.of());
+    }
+
+    public boolean hasOutputCompressorLocations() {
+        return !compressorLocationsByBlock.isEmpty();
     }
 
     public List<LimiterChannelLocation> limiterLocationsForBlock(int blockIndex) {

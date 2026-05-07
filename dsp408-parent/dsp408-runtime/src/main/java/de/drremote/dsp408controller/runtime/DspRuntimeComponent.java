@@ -1,7 +1,11 @@
 package de.drremote.dsp408controller.runtime;
 
+import java.lang.annotation.Annotation;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.osgi.service.component.annotations.Activate;
@@ -15,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import de.drremote.dsp408.api.BlockDto;
 import de.drremote.dsp408.api.ChannelDto;
 import de.drremote.dsp408.api.DeviceInfoDto;
+import de.drremote.dsp408.api.DspInstanceDto;
 import de.drremote.dsp408.api.DspService;
 import de.drremote.dsp408.api.RawTxDto;
 import de.drremote.dsp408.api.StateDto;
@@ -24,6 +29,9 @@ import de.drremote.dsp408controller.core.net.DspFrameCodec;
 import de.drremote.dsp408controller.core.protocol.CrossoverSlope;
 import de.drremote.dsp408controller.core.protocol.DspChannel;
 import de.drremote.dsp408controller.core.protocol.DspProtocol;
+import de.drremote.dsp408controller.core.protocol.FirFilterType;
+import de.drremote.dsp408controller.core.protocol.FirProcessingMode;
+import de.drremote.dsp408controller.core.protocol.FirWindowFunction;
 import de.drremote.dsp408controller.core.protocol.PeqFilterType;
 import de.drremote.dsp408controller.core.service.DspController;
 import de.drremote.dsp408controller.core.state.ChannelState;
@@ -42,6 +50,7 @@ import de.drremote.dsp408controller.util.Hex;
 public final class DspRuntimeComponent implements DspService {
     private static final Logger LOG = LoggerFactory.getLogger(DspRuntimeComponent.class);
 
+    private final boolean manageDevicePool;
     private final DspController controller = new DspController();
     private final VolumeRoomHandler volumeRoomHandler = new VolumeRoomHandler(this);
 
@@ -62,11 +71,26 @@ public final class DspRuntimeComponent implements DspService {
             );
 
     private volatile Dsp408Configuration configuration;
+    private volatile String instanceId = "main";
+    private volatile Map<String, DspRuntimeComponent> devices = Map.of();
+
+    public DspRuntimeComponent() {
+        this(true);
+    }
+
+    private DspRuntimeComponent(boolean manageDevicePool) {
+        this.manageDevicePool = manageDevicePool;
+    }
 
     @Activate
     void activate(Dsp408Configuration configuration) {
         this.configuration = configuration;
-        LOG.info("DSP408 activated ({}:{})", configuration.dsp_ip(), configuration.dsp_port());
+        this.instanceId = normalizeDspId(configuration.dsp_id());
+        if (manageDevicePool) {
+            rebuildDevicePool(configuration);
+        }
+
+        LOG.info("DSP408 {} activated ({}:{})", instanceId, configuration.dsp_ip(), configuration.dsp_port());
 
         if (configuration.auto_connect()) {
             try {
@@ -79,12 +103,21 @@ public final class DspRuntimeComponent implements DspService {
 
     @Modified
     void modified(Dsp408Configuration configuration) {
+        String oldId = instanceId;
         boolean reconnectNeeded =
                 this.configuration != null
                         && controller.isConnected()
                         && connectionChanged(this.configuration, configuration);
 
         this.configuration = configuration;
+        this.instanceId = normalizeDspId(configuration.dsp_id());
+        if (manageDevicePool) {
+            rebuildDevicePool(configuration);
+        }
+
+        if (!oldId.equals(instanceId)) {
+            LOG.info("DSP408 instance id changed: {} -> {}", oldId, instanceId);
+        }
 
         if (reconnectNeeded) {
             try {
@@ -97,11 +130,44 @@ public final class DspRuntimeComponent implements DspService {
 
     @Deactivate
     void deactivate() {
+        closeDevicePool();
         try {
             controller.close();
         } catch (Exception e) {
             LOG.warn("Error while closing DSP controller", e);
         }
+    }
+
+    @Override
+    public String dspId() {
+        return instanceId;
+    }
+
+    @Override
+    public synchronized List<DspInstanceDto> getDspInstances() {
+        if (!manageDevicePool) {
+            return List.of(toInstanceDto(true));
+        }
+
+        List<DspInstanceDto> instances = new ArrayList<>();
+        instances.add(toInstanceDto(true));
+        for (DspRuntimeComponent device : devices.values()) {
+            instances.add(device.toInstanceDto(false));
+        }
+        return List.copyOf(instances);
+    }
+
+    @Override
+    public DspService forDsp(String dspId) {
+        String normalized = normalizeDspId(dspId);
+        if (normalized.equals(instanceId)) {
+            return this;
+        }
+        DspRuntimeComponent device = devices.get(normalized);
+        if (device == null) {
+            throw new IllegalArgumentException("Unknown DSP id: " + dspId);
+        }
+        return device;
     }
 
     @Override
@@ -395,6 +461,42 @@ public final class DspRuntimeComponent implements DspService {
         CrossoverFilterState existing = controller.state().crossover(channel).lowPass();
         controller.setCrossoverLowPassBypass(channel, bypass);
         return buildRawTxDto(DspProtocol.buildCrossoverLowPass(channel, existing.frequencyHz(), resolvedSlope(existing), bypass));
+    }
+
+    @Override
+    public synchronized RawTxDto setFirProcessingMode(String outputId, String mode) throws Exception {
+        DspChannel output = DspChannel.parse(outputId);
+        FirProcessingMode parsedMode = FirProcessingMode.parse(mode);
+        controller.setFirProcessingMode(output, parsedMode);
+        return buildRawTxDto(DspProtocol.buildFirProcessingMode(output, parsedMode));
+    }
+
+    @Override
+    public synchronized RawTxDto setFirGenerator(String outputId, String type, String window,
+                                                 double highPassFrequencyHz, double lowPassFrequencyHz, int taps)
+            throws Exception {
+        DspChannel output = DspChannel.parse(outputId);
+        FirFilterType parsedType = FirFilterType.parse(type);
+        FirWindowFunction parsedWindow = FirWindowFunction.parse(window);
+        controller.setFirGenerator(output, parsedType, parsedWindow, highPassFrequencyHz, lowPassFrequencyHz, taps);
+        return buildRawTxDto(DspProtocol.buildFirGenerator(
+                output,
+                parsedType,
+                parsedWindow,
+                highPassFrequencyHz,
+                lowPassFrequencyHz,
+                taps
+        ));
+    }
+
+    @Override
+    public synchronized List<RawTxDto> uploadExternalFir(String channelId, String name, List<Double> coefficients)
+            throws Exception {
+        DspChannel channel = DspChannel.parse(channelId);
+        double[] coefficientArray = toDoubleArray(coefficients);
+        return controller.uploadExternalFir(channel, name, coefficientArray).stream()
+                .map(this::buildRawTxDto)
+                .toList();
     }
 
     @Override
@@ -704,11 +806,14 @@ public final class DspRuntimeComponent implements DspService {
             throw new IllegalArgumentException("Block index is missing");
         }
         if (!cleaned.matches("(?i)[0-9a-f]{1,2}")) {
-            throw new IllegalArgumentException("Block index must be a hex value in range 00..1C");
+            throw new IllegalArgumentException(
+                    "Block index must be a hex value in range 00.." + formatIndexHex(controller.maxParameterBlockIndex())
+            );
         }
         int index = Integer.parseInt(cleaned, 16);
-        if (index < 0x00 || index > 0x1C) {
-            throw new IllegalArgumentException("Block index must be in range 00..1C");
+        int max = controller.maxParameterBlockIndex();
+        if (index < 0x00 || index > max) {
+            throw new IllegalArgumentException("Block index must be in range 00.." + formatIndexHex(max));
         }
         return index;
     }
@@ -753,6 +858,21 @@ public final class DspRuntimeComponent implements DspService {
 
     private static int inputNumber(DspChannel channel) {
         return channel.index();
+    }
+
+    private static double[] toDoubleArray(List<Double> values) {
+        if (values == null || values.isEmpty()) {
+            throw new IllegalArgumentException("FIR coefficients are required");
+        }
+        double[] out = new double[values.size()];
+        for (int i = 0; i < values.size(); i++) {
+            Double value = values.get(i);
+            if (value == null) {
+                throw new IllegalArgumentException("FIR coefficients must not contain null values");
+            }
+            out[i] = value;
+        }
+        return out;
     }
 
     private static CrossoverSlope resolvedSlope(CrossoverFilterState state) {
@@ -828,8 +948,152 @@ public final class DspRuntimeComponent implements DspService {
         return String.join(System.lineSeparator(), lines);
     }
 
+    private synchronized DspInstanceDto toInstanceDto(boolean defaultDevice) {
+        DspConnectionConfig config = currentConfig();
+        return new DspInstanceDto(
+                instanceId,
+                config.ip(),
+                config.port(),
+                defaultDevice,
+                controller.isConnected(),
+                toDeviceInfoDto()
+        );
+    }
+
+    private void rebuildDevicePool(Dsp408Configuration configuration) {
+        Map<String, DspRuntimeComponent> replacement = new LinkedHashMap<>();
+        for (DspDefinition definition : parseAdditionalDsps(configuration)) {
+            if (definition.id().equals(instanceId)) {
+                LOG.warn("Ignoring additional DSP '{}' because it is the default DSP id", definition.id());
+                continue;
+            }
+            DspRuntimeComponent device = new DspRuntimeComponent(false);
+            device.activate(new StaticDsp408Configuration(
+                    definition.id(),
+                    definition.ip(),
+                    definition.port(),
+                    configuration.auto_connect(),
+                    configuration.auto_read_on_connect(),
+                    configuration.volume_step_db(),
+                    new String[0]
+            ));
+            replacement.put(definition.id(), device);
+        }
+
+        Map<String, DspRuntimeComponent> old = devices;
+        devices = Map.copyOf(replacement);
+        for (DspRuntimeComponent device : old.values()) {
+            device.deactivate();
+        }
+    }
+
+    private void closeDevicePool() {
+        Map<String, DspRuntimeComponent> old = devices;
+        devices = Map.of();
+        for (DspRuntimeComponent device : old.values()) {
+            device.deactivate();
+        }
+    }
+
+    private static List<DspDefinition> parseAdditionalDsps(Dsp408Configuration configuration) {
+        List<DspDefinition> definitions = new ArrayList<>();
+        String[] entries = configuration.dsps();
+        if (entries == null) {
+            return definitions;
+        }
+
+        for (String entry : entries) {
+            if (entry == null || entry.isBlank()) {
+                continue;
+            }
+            String text = entry.trim();
+            String[] split = text.split("=", 2);
+            if (split.length != 2 || split[0].isBlank() || split[1].isBlank()) {
+                throw new IllegalArgumentException("DSP definition must use id=ip or id=ip:port: " + entry);
+            }
+
+            String id = normalizeDspId(split[0]);
+            String endpoint = split[1].trim();
+            int port = 9761;
+            String ip = endpoint;
+            int colon = endpoint.lastIndexOf(':');
+            if (colon > 0 && colon < endpoint.length() - 1) {
+                ip = endpoint.substring(0, colon).trim();
+                port = Integer.parseInt(endpoint.substring(colon + 1).trim());
+            }
+            if (ip.isBlank()) {
+                throw new IllegalArgumentException("DSP IP is missing in definition: " + entry);
+            }
+            definitions.add(new DspDefinition(id, ip, port));
+        }
+
+        return definitions;
+    }
+
+    private static String normalizeDspId(String id) {
+        String normalized = id == null ? "" : id.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            normalized = "main";
+        }
+        if (!normalized.matches("[a-z0-9][a-z0-9_.-]*")) {
+            throw new IllegalArgumentException("DSP id must contain only letters, digits, dot, underscore or dash: " + id);
+        }
+        return normalized;
+    }
+
     private static boolean connectionChanged(Dsp408Configuration oldCfg, Dsp408Configuration newCfg) {
         return !oldCfg.dsp_ip().equals(newCfg.dsp_ip())
                 || oldCfg.dsp_port() != newCfg.dsp_port();
+    }
+
+    private record DspDefinition(String id, String ip, int port) {
+    }
+
+    private record StaticDsp408Configuration(String dspId,
+                                             String dspIp,
+                                             int dspPort,
+                                             boolean autoConnect,
+                                             boolean autoReadOnConnect,
+                                             double volumeStepDb,
+                                             String[] dsps) implements Dsp408Configuration {
+        @Override
+        public String dsp_id() {
+            return dspId;
+        }
+
+        @Override
+        public String dsp_ip() {
+            return dspIp;
+        }
+
+        @Override
+        public int dsp_port() {
+            return dspPort;
+        }
+
+        @Override
+        public boolean auto_connect() {
+            return autoConnect;
+        }
+
+        @Override
+        public boolean auto_read_on_connect() {
+            return autoReadOnConnect;
+        }
+
+        @Override
+        public double volume_step_db() {
+            return volumeStepDb;
+        }
+
+        @Override
+        public String[] dsps() {
+            return dsps.clone();
+        }
+
+        @Override
+        public Class<? extends Annotation> annotationType() {
+            return Dsp408Configuration.class;
+        }
     }
 }

@@ -24,10 +24,10 @@ Generated/attached during Maven package:
 
 ## Features
 
-- `dsp408-runtime` - installs API, core and runtime.
+- `dsp408-runtime` - installs SCR support plus API, core and runtime.
 - `dsp408-shell` - installs runtime plus Karaf shell commands.
 - `dsp408-matrix` - installs runtime plus Matrix bot and Jackson dependencies.
-- `dsp408-http` - installs runtime plus HTTP servlet and Jackson dependencies.
+- `dsp408-http` - installs runtime, HTTP Whiteboard support, HTTP servlet and Jackson dependencies.
 - `dsp408-all` - installs runtime, shell, Matrix and HTTP bundles.
 
 ## Build

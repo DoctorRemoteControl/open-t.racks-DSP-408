@@ -2,6 +2,7 @@
           xmlns="http://karaf.apache.org/xmlns/features/v1.6.0">
 
     <feature name="dsp408-runtime" version="${project.version}">
+        <feature>scr</feature>
         <bundle>mvn:de.drremote/dsp408-api/${project.version}</bundle>
         <bundle>mvn:de.drremote/dsp408-core/${project.version}</bundle>
         <bundle>mvn:de.drremote/dsp408-runtime/${project.version}</bundle>
@@ -22,6 +23,7 @@
 
     <feature name="dsp408-http" version="${project.version}">
         <feature>http</feature>
+        <feature>http-whiteboard</feature>
         <feature>dsp408-runtime</feature>
         <bundle>mvn:com.fasterxml.jackson.core/jackson-annotations/${jackson.version}</bundle>
         <bundle>mvn:com.fasterxml.jackson.core/jackson-core/${jackson.version}</bundle>

@@ -3,6 +3,21 @@ package de.drremote.dsp408.api;
 import java.util.List;
 
 public interface DspService {
+    default String dspId() {
+        return "main";
+    }
+
+    default List<DspInstanceDto> getDspInstances() {
+        return List.of(new DspInstanceDto(dspId(), null, 0, true, isConnected(), getDeviceInfo()));
+    }
+
+    default DspService forDsp(String dspId) {
+        if (dspId == null || dspId.isBlank() || dspId().equalsIgnoreCase(dspId.trim())) {
+            return this;
+        }
+        throw new IllegalArgumentException("Unknown DSP id: " + dspId);
+    }
+
     String helpText();
 
     String executeShell(String line) throws Exception;
@@ -76,6 +91,13 @@ public interface DspService {
     RawTxDto setCrossoverLowPassSlope(String channelId, String slope) throws Exception;
 
     RawTxDto setCrossoverLowPassBypass(String channelId, boolean bypass) throws Exception;
+
+    RawTxDto setFirProcessingMode(String outputId, String mode) throws Exception;
+
+    RawTxDto setFirGenerator(String outputId, String type, String window, double highPassFrequencyHz,
+                             double lowPassFrequencyHz, int taps) throws Exception;
+
+    List<RawTxDto> uploadExternalFir(String channelId, String name, List<Double> coefficients) throws Exception;
 
     RawTxDto setOutputPeq(String channelId, int peqIndex, String filterType, double frequencyHz, double q, double gainDb)
             throws Exception;

@@ -1,6 +1,6 @@
 # dsp408-api
 
-Public Java API for the DSP408 controller.
+Public Java API for the DSP408/FIR408 controller.
 
 ## Bundle
 
@@ -16,6 +16,7 @@ This bundle contains the stable service contract used by the other bundles. It d
 ## Main Types
 
 - `DspService` - main control/query interface.
+- `DspInstanceDto` - configured DSP instance summary for multi-DSP setups.
 - `StateDto` - current connection, device and channel summary.
 - `ChannelDto` - currently exposed per-channel state.
 - `DeviceInfoDto` - device version and system info payload.
@@ -35,6 +36,8 @@ This bundle contains the stable service contract used by the other bundles. It d
 - output PEQ, input PEQ and input GEQ
 - input gate, output compressor and output limiter
 - test tone generator
+- FIR408 processing mode, FIR generator and external FIR upload
+- multi-DSP listing and per-DSP service selection
 - shell, Matrix and volume-room command execution helpers
 
 ## Not In This Bundle
@@ -44,4 +47,4 @@ This bundle contains the stable service contract used by the other bundles. It d
 - No OSGi component implementation.
 - No HTTP, shell or Matrix transport.
 
-Functions that are still `not_decoded` in `DspLib-408.json` are intentionally not exposed as high-level methods.
+Functions that are still `not_decoded` in the protocol libraries are intentionally not exposed as high-level methods.

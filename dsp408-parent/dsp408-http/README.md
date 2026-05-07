@@ -1,6 +1,6 @@
 # dsp408-http
 
-HTTP/JSON control API for the DSP408 runtime.
+HTTP/JSON control API for the DSP408/FIR408 runtime.
 
 ## Bundle
 
@@ -21,22 +21,59 @@ This bundle exposes `DspService` through an OSGi HTTP Whiteboard servlet. It is 
 ## Useful Endpoints
 
 - `GET /api/v1/health`
+- `GET /api/v1/help`
+- `GET /api/v1/openapi.json`
+- `GET /api/v1/dsps`
+- `GET /api/v1/dsps/{dspId}/state`
+- `POST /api/v1/dsps/{dspId}/connection/connect`
+- `POST /api/v1/dsps/{dspId}/channels/{channelId}/gain`
 - `GET /api/v1/state`
+- `GET /api/v1/deviceinfo`
 - `POST /api/v1/connection/connect`
+- `POST /api/v1/connection/reconnect`
 - `POST /api/v1/connection/disconnect`
+- `POST /api/v1/device/login`
+- `POST /api/v1/preset/load`
+- `POST /api/v1/preset/name/read`
 - `GET /api/v1/channels`
+- `GET /api/v1/channels/{channelId}`
+- `POST /api/v1/channels/{channelId}/name`
 - `POST /api/v1/channels/{channelId}/gain`
 - `POST /api/v1/channels/{channelId}/mute`
+- `POST /api/v1/channels/{channelId}/unmute`
+- `POST /api/v1/channels/{channelId}/phase`
 - `POST /api/v1/channels/{channelId}/delay`
+- `POST /api/v1/delay-unit`
 - `POST /api/v1/matrix/route`
 - `POST /api/v1/matrix/crosspoint-gain`
+- `POST /api/v1/channels/{channelId}/crossover/{hp|lp}`
+- `POST /api/v1/channels/{channelId}/crossover/{hp|lp}/{frequency|slope|bypass}`
+- `POST /api/v1/fir/mode`
+- `POST /api/v1/fir/generator`
+- `POST /api/v1/fir/upload`
 - `POST /api/v1/channels/{channelId}/peq/{peqIndex}`
+- `POST /api/v1/channels/{channelId}/peq/{peqIndex}/{frequency|q|type}`
+- `POST /api/v1/channels/{channelId}/peq/{peqIndex}/q/raw`
+- `POST /api/v1/channels/{channelId}/peq/{peqIndex}/gain`
+- `POST /api/v1/channels/{channelId}/peq/{peqIndex}/gain/code`
 - `POST /api/v1/channels/{channelId}/input-peq/{peqIndex}`
+- `POST /api/v1/channels/{channelId}/input-peq/{peqIndex}/{frequency|q|gain|type|bypass}`
+- `POST /api/v1/channels/{channelId}/geq/{bandIndex}/gain`
 - `POST /api/v1/channels/{channelId}/gate`
+- `POST /api/v1/channels/{channelId}/gate/{threshold|hold|attack|release}`
 - `POST /api/v1/channels/{channelId}/compressor`
 - `POST /api/v1/channels/{channelId}/limiter`
+- `POST /api/v1/test-tone/source`
 - `POST /api/v1/test-tone/sine`
+- `POST /api/v1/test-tone/off`
+- `POST /api/v1/meters/read`
+- `GET /api/v1/blocks`
+- `GET /api/v1/blocks/{blockIndex}`
+- `POST /api/v1/blocks/{blockIndex}/read`
 - `POST /api/v1/blocks/scan`
+- `GET /api/v1/volume`
+- `POST /api/v1/volume/{up|down|mute|unmute|refresh}`
+- `POST /api/v1/volume/{set|step}`
 - `POST /api/v1/raw`
 - `POST /api/v1/command`
 
@@ -56,6 +93,14 @@ Source file:
 curl -X POST http://localhost:8181/api/v1/channels/ina/gain \
   -H "Content-Type: application/json" \
   -d "{\"db\": -6.0}"
+```
+
+Multi-DSP endpoints use the same paths with a `/dsps/{dspId}` prefix:
+
+```bash
+curl -X POST http://localhost:8181/api/v1/dsps/main/channels/out2/gain \
+  -H "Content-Type: application/json" \
+  -d "{\"db\": 0.0}"
 ```
 
 ## Build

@@ -1,6 +1,6 @@
 # dsp408-core
 
-Protocol, state and command core for the t.racks / Thomann DSP 408.
+Protocol, state and command core for the t.racks / Thomann DSP 408 and FIR408.
 
 ## Bundle
 
@@ -10,14 +10,14 @@ Protocol, state and command core for the t.racks / Thomann DSP 408.
 
 ## Purpose
 
-This bundle is the protocol engine. It knows how to build DSP408 payloads, encode/decode frames, connect to the DSP over TCP, parse parameter block dumps and maintain the in-memory DSP state.
+This bundle is the protocol engine. It knows how to build DSP408/FIR408 payloads, encode/decode frames, connect to the DSP over TCP, parse parameter block dumps and maintain the in-memory DSP state.
 
 ## Important Packages
 
 - `core.protocol` - channel enums, PEQ/crossover enums and payload builders.
 - `core.net` - TCP client, connection config and frame codec.
 - `core.decode` - block and meter payload decoders.
-- `core.library` - loader for `DspLib-408.json` read layouts.
+- `core.library` - loader for `DspLib-408.json` and `DspLib-408-fir.json` read layouts.
 - `core.state` - mutable DSP state model.
 - `core.service` - `DspController`, the high-level core facade.
 - `command` - text command processor used by shell/runtime compatibility paths.
@@ -25,11 +25,12 @@ This bundle is the protocol engine. It knows how to build DSP408 payloads, encod
 
 ## DSP Library
 
-The bundled protocol library is:
+The bundled protocol libraries are:
 
-`src/main/resources/dsp/DspLib-408.json`
+- `src/main/resources/dsp/DspLib-408.json`
+- `src/main/resources/dsp/DspLib-408-fir.json`
 
-It documents observed commands, value mappings and parameter block read locations. The loader uses this file as the source of truth for decoded read layouts.
+They document observed commands, value mappings and parameter block read locations. The loader selects the FIR library automatically for device versions starting with `FIR408`.
 
 ## Main Entry Point
 
@@ -38,6 +39,7 @@ It documents observed commands, value mappings and parameter block read location
 - connect, disconnect, handshake and keepalive
 - block scan and runtime meter polling
 - gain, mute, phase, delay and channel name writes
+- FIR408 mode/generator/external FIR payloads
 - output PEQ, input PEQ, input GEQ
 - crossover, gate, compressor and limiter
 - matrix route and crosspoint gain

@@ -9,6 +9,9 @@ import org.osgi.service.metatype.annotations.ObjectClassDefinition;
 )
 public @interface Dsp408Configuration {
 
+    @AttributeDefinition(name = "DSP ID")
+    String dsp_id() default "main";
+
     @AttributeDefinition(name = "DSP IP")
     String dsp_ip() default "192.168.0.166";
 
@@ -23,4 +26,10 @@ public @interface Dsp408Configuration {
 
     @AttributeDefinition(name = "Volume Step dB")
     double volume_step_db() default 1.0;
+
+    @AttributeDefinition(
+            name = "Additional DSPs",
+            description = "Additional DSP definitions as id=ip or id=ip:port, for example fir=192.168.0.166:9761"
+    )
+    String[] dsps() default {};
 }

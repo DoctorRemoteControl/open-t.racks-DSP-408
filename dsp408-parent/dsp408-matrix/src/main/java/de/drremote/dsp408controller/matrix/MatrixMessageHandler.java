@@ -158,6 +158,10 @@ public final class MatrixMessageHandler {
                         response.put("apiVersion", "1.0");
                         response.put("requestId", content.path("requestId").asText(""));
                         response.put("ok", false);
+                        String dspId = machineDspId(content);
+                        if (dspId != null) {
+                            response.put("dspId", dspId);
+                        }
 
                         ObjectNode error = response.putObject("error");
                         error.put("message", e.getMessage());
@@ -175,9 +179,12 @@ public final class MatrixMessageHandler {
         String requestId = content.path("requestId").asText();
         String command = content.path("command").asText();
         JsonNode args = content.path("args");
+        String dspId = machineDspId(content);
 
         String mappedCommand = mapMachineCommand(command, args);
-        String resultText = dispatcher.execute(mappedCommand, true);
+        String resultText = dspId == null
+                ? dispatcher.execute(mappedCommand, true)
+                : dispatcher.executeForDsp(dspId, mappedCommand, true);
 
         ObjectNode response = mapper.createObjectNode();
         response.put("apiVersion", "1.0");
@@ -185,6 +192,9 @@ public final class MatrixMessageHandler {
         response.put("ok", true);
         response.put("command", command);
         response.put("mappedCommand", mappedCommand);
+        if (dspId != null) {
+            response.put("dspId", dspId);
+        }
 
         ObjectNode result = response.putObject("result");
         result.put("text", resultText == null ? "" : resultText);
@@ -197,6 +207,8 @@ public final class MatrixMessageHandler {
             case "connection.connect" -> "!dsp connect";
             case "connection.disconnect" -> "!dsp disconnect";
             case "connection.reconnect" -> "!dsp reconnect";
+
+            case "dsp.instances.list" -> "!dsp dsps";
 
             case "device.info.get" -> "!dsp deviceinfo";
             case "state.get" -> "!dsp state";
@@ -274,6 +286,23 @@ public final class MatrixMessageHandler {
             case "crossover.lp.bypass.set" ->
                     "!dsp xlpbypass " + requireText(args, "channelId")
                             + " " + requireOnOff(args, "bypass");
+
+            case "fir.mode.set" ->
+                    "!dsp firmode " + requireAnyText(args, "outputId", "output", "channelId")
+                            + " " + requireText(args, "mode");
+
+            case "fir.generator.set", "fir.generate.set" ->
+                    "!dsp firgen " + requireAnyText(args, "outputId", "output", "channelId")
+                            + " " + requireText(args, "type")
+                            + " " + requireText(args, "window")
+                            + " " + requireAnyNumber(args, "hpHz", "highPassFrequencyHz", "highPassHz", "hp")
+                            + " " + requireAnyNumber(args, "lpHz", "lowPassFrequencyHz", "lowPassHz", "lp")
+                            + " " + requireNumber(args, "taps");
+
+            case "fir.upload", "fir.upload.set" ->
+                    "!dsp firupload " + requireAnyText(args, "channelId", "outputId", "output")
+                            + " " + requireAnyText(args, "name", "filterName")
+                            + " " + requireCoefficients(args);
 
             case "output.peq.set", "channel.peq.set" ->
                     "!dsp opeqset " + requireText(args, "channelId")
@@ -403,6 +432,25 @@ public final class MatrixMessageHandler {
         };
     }
 
+    private static String machineDspId(JsonNode content) {
+        String dspId = optionalText(content, "dspId");
+        if (dspId != null) {
+            return dspId;
+        }
+        return optionalText(content.path("args"), "dspId");
+    }
+
+    private static String optionalText(JsonNode node, String field) {
+        if (node == null || !node.has(field)) {
+            return null;
+        }
+        String value = node.get(field).asText();
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
     private static String requireText(JsonNode node, String field) {
         String value = node.path(field).asText();
         if (value == null || value.isBlank()) {
@@ -411,11 +459,61 @@ public final class MatrixMessageHandler {
         return value.trim();
     }
 
+    private static String requireAnyText(JsonNode node, String... fields) {
+        for (String field : fields) {
+            String value = optionalText(node, field);
+            if (value != null) {
+                return value;
+            }
+        }
+        throw new IllegalArgumentException("Missing field: " + String.join("|", fields));
+    }
+
     private static String requireNumber(JsonNode node, String field) {
         if (!node.has(field)) {
             throw new IllegalArgumentException("Missing field: " + field);
         }
         return node.get(field).asText();
+    }
+
+    private static String requireAnyNumber(JsonNode node, String... fields) {
+        for (String field : fields) {
+            if (node != null && node.has(field)) {
+                return node.get(field).asText();
+            }
+        }
+        throw new IllegalArgumentException("Missing field: " + String.join("|", fields));
+    }
+
+    private static String requireCoefficients(JsonNode node) {
+        JsonNode value = node.path("coefficients");
+        if (value.isMissingNode() || value.isNull()) {
+            value = node.path("coefficientsText");
+        }
+        if (value.isMissingNode() || value.isNull()) {
+            throw new IllegalArgumentException("Missing field: coefficients");
+        }
+        if (value.isArray()) {
+            StringBuilder out = new StringBuilder();
+            for (JsonNode item : value) {
+                if (!item.isNumber() && !item.isTextual()) {
+                    throw new IllegalArgumentException("FIR coefficients must be numbers.");
+                }
+                if (!out.isEmpty()) {
+                    out.append(',');
+                }
+                out.append(item.asText());
+            }
+            if (out.isEmpty()) {
+                throw new IllegalArgumentException("FIR coefficients are required.");
+            }
+            return out.toString();
+        }
+        String text = value.asText();
+        if (text == null || text.isBlank()) {
+            throw new IllegalArgumentException("FIR coefficients are required.");
+        }
+        return text.trim();
     }
 
     private static String requireOnOff(JsonNode node, String field) {

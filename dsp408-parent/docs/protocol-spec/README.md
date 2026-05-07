@@ -1,15 +1,15 @@
 # Protocol Spec Status
 
-`DspLib-408.json` in the repository root is the canonical DSP408Controller protocol and field-library standard.
+`DspLib-408.json` and `DspLib-408-fir.json` are the canonical DSP408Controller protocol and field-library standards.
 
-Canonical file:
+Canonical files:
 
-* `C:\Users\XLA\DSP408\DSP408Controller\DspLib-408.json`
+* `docs/protocol-spec/DspLib-408.json`
+* `docs/protocol-spec/DspLib-408-fir.json`
 
 Status of the files in this folder:
 
-* `dsp408.protocol.json` is a legacy working specification snapshot.
-* `dsp408_decode_Aeternitaas.json` is an older external-reference-based comparison artifact.
-* `PEQ.json` is a focused working note for PEQ-related reverse-engineering.
+* `DspLib-408.json` is the common DSP408 protocol library and the baseline for shared features.
+* `DspLib-408-fir.json` has the same shared format plus FIR408-only features.
 
-For new implementation work, new reverse-engineering notes, and future code generation/import steps, prefer `DspLib-408.json` as the source of truth.
+For new implementation work, keep shared DSP408/FIR408 features compatible between both files. Put FIR-only commands and fields only in `DspLib-408-fir.json`.

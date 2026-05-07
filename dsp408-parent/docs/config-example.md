@@ -7,7 +7,7 @@ Only these Karaf commands are used:
 * `config:edit`
 * `config:property-set`
 * `config:update`
-* optional `config:proplist`
+* optional `config:property-list`
 
 No files in `etc/` are used.
 
@@ -35,11 +35,13 @@ An underscore `_` becomes a dot `.`.
 ### DSP Configuration
 
 ```text
+dsp_id()                  -> dsp.id
 dsp_ip()                  -> dsp.ip
 dsp_port()                -> dsp.port
 auto_connect()            -> auto.connect
 auto_read_on_connect()    -> auto.read.on.connect
 volume_step_db()          -> volume.step.db
+dsps()                    -> dsps
 ```
 
 ### Matrix Bot Configuration
@@ -48,7 +50,8 @@ volume_step_db()          -> volume.step.db
 enabled()                 -> enabled
 matrix_url()              -> matrix.url
 access_token()            -> access.token
-admin_room_id()           -> admin.room.id
+control_room_id()         -> control.room.id
+admin_room_id()           -> admin.room.id deprecated fallback
 volume_room_id()          -> volume.room.id
 machine_room_id()         -> machine.room.id
 allowed_users()           -> allowed.users
@@ -73,6 +76,7 @@ de.drremote.dsp408controller
 
 ```bash
 config:edit de.drremote.dsp408controller
+config:property-set dsp.id main
 config:property-set dsp.ip 192.168.50.166
 config:property-set dsp.port 9761
 config:property-set auto.connect true
@@ -83,11 +87,51 @@ config:update
 
 ### Meaning
 
-`dsp.ip` is the IP address of the DSP.
+`dsp.id` is the id of the default DSP used by the old single-DSP API and shell commands.
+`dsp.ip` is the IP address of the default DSP.
 `dsp.port` is the TCP port of the DSP.
 `auto.connect` automatically connects to the DSP when the component is activated.
 `auto.read.on.connect` automatically reads the parameter blocks after connecting.
 `volume.step.db` is the step size for `louder` and `quieter` in the volume room.
+`dsps` contains optional additional DSPs as `id=ip` or `id=ip:port`.
+
+### Multiple DSPs
+
+The old endpoints continue to use the default DSP:
+
+```text
+/api/v1/state
+/api/v1/channels/out1/gain
+```
+
+Additional DSPs are addressed by prefixing the same endpoint with `/dsps/{id}`:
+
+```text
+/api/v1/dsps
+/api/v1/dsps/main/state
+/api/v1/dsps/fir1/channels/out1/gain
+```
+
+Example with two additional DSPs:
+
+```bash
+config:edit de.drremote.dsp408controller
+config:property-set dsp.id main
+config:property-set dsp.ip 192.168.50.166
+config:property-set dsp.port 9761
+config:property-set dsps fir1=192.168.50.167:9761,room2=192.168.50.168:9761
+config:update
+```
+
+Karaf shell helpers:
+
+```bash
+dsp408:dsps
+dsp408:select fir1
+dsp408:current
+dsp408:state
+dsp408:dsp room2 gain out1 -6
+```
 
 ---
 
@@ -106,7 +150,7 @@ config:edit de.drremote.dsp408controller.matrix
 config:property-set enabled true
 config:property-set matrix.url https://matrix.example.net
 config:property-set access.token syt_dummy_access_token_123456
-config:property-set admin.room.id '!dummyadminroom:example.net'
+config:property-set control.room.id '!dummycontrolroom:example.net'
 config:property-set volume.room.id '!dummyvolumeroom:example.net'
 config:property-set machine.room.id '!dummymachineroom:example.net'
 config:property-set allowed.users @alice:example.net,@bob:example.net,@admin:example.net
@@ -123,7 +167,8 @@ config:update
 `enabled` enables the bot.
 `matrix.url` is the base URL of your Matrix homeserver.
 `access.token` is the access token of the bot account.
-`admin.room.id` is the room for `!dsp ...` commands.
+`control.room.id` is the room for `!dsp ...` commands.
+`admin.room.id` is a deprecated fallback for `control.room.id`.
 `volume.room.id` is the room for volume commands like `louder`, `quieter`, or `set -10`.
 `machine.room.id` is the room for machine JSON commands.
 `allowed.users` contains all users allowed to use the bot.
@@ -156,7 +201,7 @@ config:edit de.drremote.dsp408controller.matrix
 config:property-set enabled true
 config:property-set matrix.url https://matrix.example.net
 config:property-set access.token syt_dummy_access_token_123456
-config:property-set admin.room.id '!dummyadminroom:example.net'
+config:property-set control.room.id '!dummycontrolroom:example.net'
 config:property-set volume.room.id '!dummyvolumeroom:example.net'
 config:property-set machine.room.id '!dummymachineroom:example.net'
 config:property-set allowed.users @alice:example.net,@bob:example.net,@admin:example.net
@@ -178,14 +223,14 @@ After setting the properties, you can verify the active configuration.
 
 ```bash
 config:edit de.drremote.dsp408controller
-config:proplist
+config:property-list
 ```
 
 ### Matrix
 
 ```bash
 config:edit de.drremote.dsp408controller.matrix
-config:proplist
+config:property-list
 ```
 
 ---
@@ -211,10 +256,12 @@ config:edit de.drremote.dsp408controller.matrix
 config:property-set enabled true
 config:property-set matrix.url https://matrix.example.net
 config:property-set access.token syt_dummy_access_token_123456
-config:property-set admin.room.id '!dummyadminroom:example.net'
+config:property-set control.room.id '!dummycontrolroom:example.net'
 config:property-set volume.room.id '!dummyvolumeroom:example.net'
+config:property-set machine.room.id '!dummymachineroom:example.net'
 config:property-set allowed.users @alice:example.net,@bob:example.net,@admin:example.net
 config:property-set admin.users @admin:example.net
+config:property-set machine.users @orchestrator:example.net,@automation:example.net
 config:property-set sync.timeout.ms 30000
 config:property-set reconnect.delay.ms 3000
 config:property-set connect.dsp.on.start true
@@ -232,7 +279,7 @@ Wrong:
 ```text
 matrix_url
 access_token
-admin_room_id
+control_room_id
 ```
 
 Correct:
@@ -240,7 +287,7 @@ Correct:
 ```text
 matrix.url
 access.token
-admin.room.id
+control.room.id
 ```
 
 ### Forgetting `config:update`
@@ -249,7 +296,7 @@ If you do not run `config:update`, the changes will not be applied.
 
 ### Wrong Room ID
 
-For `admin.room.id` and `volume.room.id`, you should use the real Matrix room ID, for example:
+For `control.room.id`, `volume.room.id`, and `machine.room.id`, you should use the real Matrix room ID, for example:
 
 ```text
 !dummyroomid123:example.net
@@ -297,7 +344,7 @@ config:edit de.drremote.dsp408controller.matrix
 config:property-set enabled true
 config:property-set matrix.url https://matrix.example.net
 config:property-set access.token syt_dummy_test_token
-config:property-set admin.room.id '!testroom:example.net'
+config:property-set control.room.id '!testroom:example.net'
 config:property-set allowed.users @tester:example.net
 config:property-set admin.users @tester:example.net
 config:update
@@ -315,6 +362,7 @@ config:property-set dsp.ip 192.168.50.166
 config:property-set dsp.port 9761
 config:property-set auto.connect true
 config:property-set auto.read.on.connect true
+config:property-set volume.step.db 1.0
 config:update
 ```
 
@@ -325,7 +373,7 @@ config:edit de.drremote.dsp408controller.matrix
 config:property-set enabled true
 config:property-set matrix.url https://matrix.example.net
 config:property-set access.token syt_dummy_access_token
-config:property-set admin.room.id '!dummyadminroom:example.net'
+config:property-set control.room.id '!dummycontrolroom:example.net'
 config:property-set volume.room.id '!dummyvolumeroom:example.net'
 config:property-set machine.room.id '!dummymachineroom:example.net'
 config:property-set allowed.users @botuser:example.net

@@ -9,6 +9,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -18,6 +19,9 @@ import java.util.function.Consumer;
 import de.drremote.dsp408controller.core.protocol.CrossoverSlope;
 import de.drremote.dsp408controller.core.protocol.DspChannel;
 import de.drremote.dsp408controller.core.protocol.DspProtocol;
+import de.drremote.dsp408controller.core.protocol.FirFilterType;
+import de.drremote.dsp408controller.core.protocol.FirProcessingMode;
+import de.drremote.dsp408controller.core.protocol.FirWindowFunction;
 import de.drremote.dsp408controller.core.protocol.PeqFilterType;
 import de.drremote.dsp408controller.util.Hex;
 
@@ -293,6 +297,36 @@ public final class DspClient implements Closeable {
 
     public void setInputGeq(int inputChannelIndex, int bandIndex, double gainDb) throws IOException {
         sendPayload(DspProtocol.buildInputGeq(inputChannelIndex, bandIndex, gainDb));
+    }
+
+    public void setFirProcessingMode(DspChannel output, FirProcessingMode mode) throws IOException {
+        sendPayload(DspProtocol.buildFirProcessingMode(output, mode));
+    }
+
+    public void setFirGenerator(DspChannel output,
+                                FirFilterType type,
+                                FirWindowFunction window,
+                                double highPassFrequencyHz,
+                                double lowPassFrequencyHz,
+                                int taps) throws IOException {
+        sendPayload(DspProtocol.buildFirGenerator(
+                output,
+                type,
+                window,
+                highPassFrequencyHz,
+                lowPassFrequencyHz,
+                taps
+        ));
+    }
+
+    public void uploadExternalFir(DspChannel channel,
+                                  String name,
+                                  double[] coefficients,
+                                  boolean includeBeginCommand) throws IOException {
+        List<byte[]> payloads = DspProtocol.buildExternalFirUpload(channel, name, coefficients, includeBeginCommand);
+        for (byte[] payload : payloads) {
+            sendPayload(payload);
+        }
     }
 
     public void setInputGate(int inputChannelIndex,

@@ -36,7 +36,7 @@ public final class OutputPeqBlockDecoder implements BlockDecoder {
                     state.getBlock(location.frequency().blockIndex()),
                     location.frequency().dataOffset()
             );
-            Integer qRaw = readUInt16LE(state.getBlock(location.q().blockIndex()), location.q().dataOffset());
+            Integer qRaw = readUInt8(state.getBlock(location.q().blockIndex()), location.q().dataOffset());
 
             if (gainRaw == null || frequencyRaw == null || qRaw == null) {
                 continue;
@@ -87,5 +87,12 @@ public final class OutputPeqBlockDecoder implements BlockDecoder {
             return null;
         }
         return (data[offset] & 0xFF) | ((data[offset + 1] & 0xFF) << 8);
+    }
+
+    private static Integer readUInt8(byte[] data, int offset) {
+        if (data == null || offset < 0 || data.length <= offset) {
+            return null;
+        }
+        return data[offset] & 0xFF;
     }
 }

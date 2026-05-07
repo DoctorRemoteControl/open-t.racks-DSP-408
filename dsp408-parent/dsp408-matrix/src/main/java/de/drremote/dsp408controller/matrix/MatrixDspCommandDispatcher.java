@@ -1,18 +1,32 @@
 package de.drremote.dsp408controller.matrix;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import de.drremote.dsp408.api.DeviceInfoDto;
+import de.drremote.dsp408.api.DspInstanceDto;
 import de.drremote.dsp408.api.DspService;
 
 final class MatrixDspCommandDispatcher {
-    private final DspService service;
+    private final DspService manager;
     private final ObjectMapper mapper = new ObjectMapper();
 
     MatrixDspCommandDispatcher(DspService service) {
-        this.service = service;
+        this.manager = service;
     }
 
     String execute(String rawCommand, boolean isAdmin) throws Exception {
+        return executeOn(manager, rawCommand, isAdmin);
+    }
+
+    String executeForDsp(String dspId, String rawCommand, boolean isAdmin) throws Exception {
+        DspService target = targetDsp(dspId);
+        return executeOn(target, rawCommand, isAdmin);
+    }
+
+    private String executeOn(DspService service, String rawCommand, boolean isAdmin) throws Exception {
         String[] parts = parse(rawCommand);
         if (parts.length == 0) {
             return help();
@@ -20,6 +34,18 @@ final class MatrixDspCommandDispatcher {
 
         String cmd = parts[0].toLowerCase();
         String[] args = tail(parts);
+
+        if ("dsps".equals(cmd)) {
+            return formatDsps();
+        }
+        if ("dsp".equals(cmd) || "for".equals(cmd)) {
+            String dspId = arg(args, 0, "Usage: !dsp dsp <dsp-id> <command>");
+            String[] nested = tail(args);
+            if (nested.length == 0) {
+                throw new IllegalArgumentException("Usage: !dsp dsp <dsp-id> <command>");
+            }
+            return executeOn(targetDsp(dspId), join(nested), isAdmin);
+        }
 
         if (!isAdmin && isAdminOnly(cmd)) {
             throw new IllegalArgumentException("Command disabled for non-admin Matrix users.");
@@ -42,7 +68,7 @@ final class MatrixDspCommandDispatcher {
                 service.loginPin(arg(args, 0, "Usage: !dsp login <1234>"));
                 yield "Login PIN sent.";
             }
-            case "loadpreset" -> loadPreset(args);
+            case "loadpreset" -> loadPreset(service, args);
             case "readpresetname" -> json(service.readPresetName(intArg(args, 0, "Usage: !dsp readpresetname <0..19>")));
             case "meters" -> json(service.requestRuntimeMeters());
             case "blocks" -> json(service.getCachedBlockIndices());
@@ -67,6 +93,9 @@ final class MatrixDspCommandDispatcher {
             case "xlpfreq" -> json(service.setCrossoverLowPassFrequency(arg(args, 0, "Usage: !dsp xlpfreq <channel> <hz>"), doubleArg(args, 1, "Usage: !dsp xlpfreq <channel> <hz>")));
             case "xlpslope" -> json(service.setCrossoverLowPassSlope(arg(args, 0, "Usage: !dsp xlpslope <channel> <slope>"), arg(args, 1, "Usage: !dsp xlpslope <channel> <slope>")));
             case "xlpbypass" -> json(service.setCrossoverLowPassBypass(arg(args, 0, "Usage: !dsp xlpbypass <channel> <on|off>"), onOffArg(args, 1, "Usage: !dsp xlpbypass <channel> <on|off>")));
+            case "firmode" -> json(service.setFirProcessingMode(arg(args, 0, "Usage: !dsp firmode <out> <iir|fir>"), arg(args, 1, "Usage: !dsp firmode <out> <iir|fir>")));
+            case "firgen", "firset" -> json(service.setFirGenerator(arg(args, 0, "Usage: !dsp firgen <out> <type> <window> <hpHz> <lpHz> <taps>"), arg(args, 1, "Usage: !dsp firgen <out> <type> <window> <hpHz> <lpHz> <taps>"), arg(args, 2, "Usage: !dsp firgen <out> <type> <window> <hpHz> <lpHz> <taps>"), doubleArg(args, 3, "Usage: !dsp firgen <out> <type> <window> <hpHz> <lpHz> <taps>"), doubleArg(args, 4, "Usage: !dsp firgen <out> <type> <window> <hpHz> <lpHz> <taps>"), intArg(args, 5, "Usage: !dsp firgen <out> <type> <window> <hpHz> <lpHz> <taps>")));
+            case "firupload" -> json(service.uploadExternalFir(arg(args, 0, "Usage: !dsp firupload <channel> <name> <coefficients>"), arg(args, 1, "Usage: !dsp firupload <channel> <name> <coefficients>"), doubleList(joinFrom(args, 2))));
             case "opeqset" -> json(service.setOutputPeq(arg(args, 0, "Usage: !dsp opeqset <out> <band> <type> <hz> <q> <gainDb>"), intArg(args, 1, "Usage: !dsp opeqset <out> <band> <type> <hz> <q> <gainDb>"), arg(args, 2, "Usage: !dsp opeqset <out> <band> <type> <hz> <q> <gainDb>"), doubleArg(args, 3, "Usage: !dsp opeqset <out> <band> <type> <hz> <q> <gainDb>"), doubleArg(args, 4, "Usage: !dsp opeqset <out> <band> <type> <hz> <q> <gainDb>"), doubleArg(args, 5, "Usage: !dsp opeqset <out> <band> <type> <hz> <q> <gainDb>")));
             case "opeqfreq", "peqf" -> json(service.setOutputPeqFrequency(arg(args, 0, "Usage: !dsp opeqfreq <out> <band> <hz>"), intArg(args, 1, "Usage: !dsp opeqfreq <out> <band> <hz>"), doubleArg(args, 2, "Usage: !dsp opeqfreq <out> <band> <hz>")));
             case "opeqq" -> json(service.setOutputPeqQ(arg(args, 0, "Usage: !dsp opeqq <out> <band> <q>"), intArg(args, 1, "Usage: !dsp opeqq <out> <band> <q>"), doubleArg(args, 2, "Usage: !dsp opeqq <out> <band> <q>")));
@@ -98,7 +127,44 @@ final class MatrixDspCommandDispatcher {
         };
     }
 
-    private String loadPreset(String[] args) throws Exception {
+    private DspService targetDsp(String dspId) {
+        if (dspId == null || dspId.isBlank()) {
+            return manager;
+        }
+        return manager.forDsp(dspId.trim());
+    }
+
+    private String formatDsps() {
+        List<DspInstanceDto> instances = manager.getDspInstances();
+        if (instances.isEmpty()) {
+            return "No DSPs configured.";
+        }
+
+        StringBuilder out = new StringBuilder("Configured DSPs:\n");
+        for (DspInstanceDto dsp : instances) {
+            DeviceInfoDto info = dsp.deviceInfo();
+            String version = info == null || info.deviceVersion() == null || info.deviceVersion().isBlank()
+                    ? "-"
+                    : info.deviceVersion();
+            out.append(dsp.defaultDevice() ? "* " : "- ")
+                    .append(dsp.id())
+                    .append(" ")
+                    .append(dsp.connected() ? "connected" : "disconnected");
+            if (dsp.ip() != null && !dsp.ip().isBlank()) {
+                out.append(" ")
+                        .append(dsp.ip())
+                        .append(":")
+                        .append(dsp.port());
+            }
+            out.append(" ")
+                    .append(version)
+                    .append('\n');
+        }
+        out.append("Use: !dsp dsp <dsp-id> <command>");
+        return out.toString();
+    }
+
+    private String loadPreset(DspService service, String[] args) throws Exception {
         String slot = arg(args, 0, "Usage: !dsp loadpreset <F00|U01..U20|0..20>");
         if (slot.matches("\\d+")) {
             return json(service.loadPreset(Integer.parseInt(slot)));
@@ -110,6 +176,7 @@ final class MatrixDspCommandDispatcher {
         return """
                 DSP408 Matrix commands
 
+                Multi-DSP: dsps, dsp <dsp-id> <command>
                 Connection: connect, disconnect, reconnect, connected
                 State: state, status, channels, get <channel>, deviceinfo, meters
                 Device: login <1234>, loadpreset <F00|U01..U20|0..20>, readpresetname <0..19>
@@ -117,6 +184,7 @@ final class MatrixDspCommandDispatcher {
                 Channel: gain <channel> <db>, mute <channel>, unmute <channel>, name <channel> <name>, phase <channel> <0|180>, delay <channel> <ms>, delayunit <ms|m|ft>
                 Matrix routing: route <out> <in>, xgain <out> <in> <db>
                 Crossover: xhpset/xlpset <channel> <hz> <slope> <on|off>, xhpfreq/xlpfreq, xhpslope/xlpslope, xhpbypass/xlpbypass
+                FIR408: firmode <out> <iir|fir>, firgen <out> <type> <window> <hpHz> <lpHz> <taps>, firupload <channel> <name> <coefficients>
                 Output PEQ: opeqset, opeqfreq, opeqq, opeqqraw, opeqgain, opeqgcode, opeqtype
                 Input PEQ/GEQ: ipeqset, ipeqfreq, ipeqq, ipeqgain, ipeqtype, ipeqbypass, igeq
                 Dynamics: gateset, gatethreshold, gatehold, gateattack, gaterelease, compset, compget, limitset, limitget
@@ -191,5 +259,31 @@ final class MatrixDspCommandDispatcher {
             return "";
         }
         return String.join(" ", args).trim();
+    }
+
+    private static String joinFrom(String[] args, int offset) {
+        if (args == null || args.length <= offset) {
+            return "";
+        }
+        String[] tail = new String[args.length - offset];
+        System.arraycopy(args, offset, tail, 0, tail.length);
+        return join(tail);
+    }
+
+    private static List<Double> doubleList(String text) {
+        if (text == null || text.isBlank()) {
+            throw new IllegalArgumentException("Usage: !dsp firupload <channel> <name> <coefficients>");
+        }
+        String[] tokens = text.trim().split("[,;\\s]+");
+        List<Double> values = new ArrayList<>();
+        for (String token : tokens) {
+            if (!token.isBlank()) {
+                values.add(Double.parseDouble(token));
+            }
+        }
+        if (values.isEmpty()) {
+            throw new IllegalArgumentException("FIR coefficients are required");
+        }
+        return values;
     }
 }

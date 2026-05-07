@@ -1,7 +1,11 @@
 package de.drremote.dsp408controller.command;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -9,6 +13,9 @@ import java.util.function.Supplier;
 import de.drremote.dsp408controller.core.net.DspConnectionConfig;
 import de.drremote.dsp408controller.core.protocol.CrossoverSlope;
 import de.drremote.dsp408controller.core.protocol.DspChannel;
+import de.drremote.dsp408controller.core.protocol.FirFilterType;
+import de.drremote.dsp408controller.core.protocol.FirProcessingMode;
+import de.drremote.dsp408controller.core.protocol.FirWindowFunction;
 import de.drremote.dsp408controller.core.protocol.PeqFilterType;
 import de.drremote.dsp408controller.core.service.DspController;
 import de.drremote.dsp408controller.core.service.UnsupportedDspOperationException;
@@ -117,6 +124,10 @@ public final class DspCommandProcessor {
                 case "xlpslope" -> handleXlpSlope(commandParts);
                 case "xlpbypass" -> handleXlpBypass(commandParts);
 
+                case "firmode" -> handleFirMode(commandParts);
+                case "firgen", "firset" -> handleFirGenerator(commandParts);
+                case "firupload" -> handleFirUpload(commandParts);
+
                 case "meters" -> handleMeters();
                 case "meterwatch" -> handleMeterWatch(commandParts);
                 case "meterstop" -> handleMeterStop();
@@ -160,10 +171,14 @@ public final class DspCommandProcessor {
     }
 
     private void handleInfo() {
-        log.accept(DspTextFormatter.formatDeviceInfo(
+        String info = DspTextFormatter.formatDeviceInfo(
                 controller.deviceVersion(),
                 controller.lastSystemInfoPayload()
-        ));
+        );
+        log.accept(info
+                + System.lineSeparator()
+                + "Library      : " + controller.libraryType()
+                + " blocks=00.." + String.format(Locale.ROOT, "%02X", controller.maxParameterBlockIndex()));
     }
 
     private void handleState() {
@@ -447,6 +462,31 @@ public final class DspCommandProcessor {
         );
     }
 
+    private void handleFirMode(String[] parts) throws IOException {
+        requireArgs(parts, 3, "Usage: firmode <out> <iir|fir>");
+        controller.setFirProcessingMode(parseOutput(parts[1]), FirProcessingMode.parse(parts[2]));
+    }
+
+    private void handleFirGenerator(String[] parts) throws IOException {
+        requireArgs(parts, 7, "Usage: firgen <out> <type> <window> <hpHz> <lpHz> <taps>");
+        controller.setFirGenerator(
+                parseOutput(parts[1]),
+                FirFilterType.parse(parts[2]),
+                FirWindowFunction.parse(parts[3]),
+                Double.parseDouble(parts[4]),
+                Double.parseDouble(parts[5]),
+                Integer.parseInt(parts[6])
+        );
+    }
+
+    private void handleFirUpload(String[] parts) throws IOException {
+        requireArgs(parts, 4, "Usage: firupload <channel> <name> <file|coefficients>");
+        String source = String.join(" ", Arrays.copyOfRange(parts, 3, parts.length));
+        double[] coefficients = parseFirCoefficients(source);
+        List<byte[]> payloads = controller.uploadExternalFir(parseChannel(parts[1]), parts[2], coefficients);
+        log.accept("External FIR upload sent: " + coefficients.length + " taps, " + payloads.size() + " payloads.");
+    }
+
     private void handleMeters() throws IOException {
         controller.requestRuntimeMeters();
         log.accept(DspTextFormatter.formatMetersState(controller.state()));
@@ -600,6 +640,10 @@ public final class DspCommandProcessor {
       xlpslope <channel> <slope>
       xlpbypass <channel> <on|off>
 
+      firmode <out> <iir|fir>
+      firgen <out> <type> <window> <hpHz> <lpHz> <taps>
+      firupload <channel> <name> <file|coefficients>
+
       meters
       meterwatch [intervalMs]
       meterstop
@@ -685,6 +729,61 @@ public final class DspCommandProcessor {
 
     private static CrossoverSlope parseSlope(String value) {
         return CrossoverSlope.parse(value);
+    }
+
+    private static double[] parseFirCoefficients(String source) throws IOException {
+        if (source == null || source.isBlank()) {
+            throw new IllegalArgumentException("FIR coefficient source is required");
+        }
+
+        String text = readCoefficientSource(source.trim());
+        StringBuilder cleaned = new StringBuilder();
+        for (String line : text.split("\\R")) {
+            String stripped = stripCoefficientComment(line);
+            if (!stripped.isBlank()) {
+                cleaned.append(stripped).append(' ');
+            }
+        }
+
+        String[] tokens = cleaned.toString().trim().split("[,;\\s]+");
+        List<Double> values = new ArrayList<>();
+        for (String token : tokens) {
+            if (token == null || token.isBlank()) {
+                continue;
+            }
+            values.add(Double.parseDouble(token));
+        }
+
+        if (values.isEmpty()) {
+            throw new IllegalArgumentException("No FIR coefficients found");
+        }
+
+        double[] coefficients = new double[values.size()];
+        for (int i = 0; i < values.size(); i++) {
+            coefficients[i] = values.get(i);
+        }
+        return coefficients;
+    }
+
+    private static String readCoefficientSource(String source) throws IOException {
+        Path path = Path.of(source);
+        if (Files.isRegularFile(path)) {
+            return Files.readString(path);
+        }
+        return source;
+    }
+
+    private static String stripCoefficientComment(String line) {
+        String out = line == null ? "" : line;
+        int hash = out.indexOf('#');
+        if (hash >= 0) {
+            out = out.substring(0, hash);
+        }
+        int slash = out.indexOf("//");
+        if (slash >= 0) {
+            out = out.substring(0, slash);
+        }
+        return out.trim();
     }
 
     private static String valueOrDash(String value) {

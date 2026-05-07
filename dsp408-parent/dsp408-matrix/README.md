@@ -1,6 +1,6 @@
 # dsp408-matrix
 
-Matrix bot integration for DSP408 control.
+Matrix bot integration for DSP408/FIR408 control.
 
 ## Bundle
 
@@ -11,7 +11,7 @@ Matrix bot integration for DSP408 control.
 
 ## Purpose
 
-This bundle lets Matrix rooms control the DSP408. It supports human-readable `!dsp ...` commands in a control room, a restricted volume room and structured machine events for service-to-service control.
+This bundle lets Matrix rooms control DSP408 and FIR408 devices. It supports human-readable `!dsp ...` commands in a control room, a restricted volume room and structured machine events for service-to-service control.
 
 ## Main Classes
 
@@ -29,17 +29,20 @@ This bundle lets Matrix rooms control the DSP408. It supports human-readable `!d
 ## Configuration Properties
 
 - `enabled` - start/stop the bot.
-- `matrix_url` - Matrix homeserver base URL.
-- `access_token` - access token for the bot account.
-- `control_room_id` - room for full `!dsp` control.
-- `volume_room_id` - room for `!dsp volume ...` commands.
-- `machine_room_id` - room for structured machine events.
-- `allowed_users` - users allowed to issue normal commands.
-- `admin_users` - users allowed to issue admin commands.
-- `machine_users` - users allowed to send machine events.
-- `sync_timeout_ms` - Matrix sync timeout.
-- `reconnect_delay_ms` - delay after Matrix errors.
-- `connect_dsp_on_start` - connect the DSP during bot startup.
+- `matrix.url` - Matrix homeserver base URL.
+- `access.token` - access token for the bot account.
+- `control.room.id` - room for full `!dsp` control.
+- `admin.room.id` - deprecated fallback for `control.room.id`.
+- `volume.room.id` - room for `!dsp volume ...` commands.
+- `machine.room.id` - room for structured machine events.
+- `allowed.users` - users allowed to issue normal commands.
+- `admin.users` - users allowed to issue admin commands.
+- `machine.users` - users allowed to send machine events.
+- `sync.timeout.ms` - Matrix sync timeout.
+- `reconnect.delay.ms` - delay after Matrix errors.
+- `connect.dsp.on.start` - connect the DSP during bot startup.
+
+The Java configuration methods use underscores, for example `control_room_id()`. In Karaf configuration those names are written with dots, for example `control.room.id`.
 
 ## Human Commands
 
@@ -48,12 +51,19 @@ Control room messages must start with `!dsp`.
 Examples:
 
 ```text
+!dsp dsps
 !dsp status
 !dsp gain ina -6
+!dsp dsp fir408 state
+!dsp dsp normal408 gain out1 -6
 !dsp route out1 ina
 !dsp xgain out1 inb -12
+!dsp xhpset out1 80 LR_24 on
 !dsp opeqfreq out1 1 1000
+!dsp firmode out1 fir
+!dsp firgen out1 lowpass hamming 0 120 512
 !dsp tone 1000
+!dsp volume status
 !dsp toneoff
 ```
 
@@ -64,6 +74,14 @@ Admin-only human commands:
 - `reconnect`
 - `raw`
 - `sendraw`
+
+The old commands target the default DSP. To address a specific configured DSP, wrap the same command with `dsp <id>`:
+
+```text
+!dsp dsp fir408 connected
+!dsp dsp fir408 firmode out1 fir
+!dsp dsp normal408 route out1 ina
+```
 
 ## Machine Events
 
@@ -80,6 +98,7 @@ Example event content:
 ```json
 {
   "requestId": "req-001",
+  "dspId": "fir408",
   "command": "channel.gain.set",
   "args": {
     "channelId": "ina",
@@ -90,14 +109,21 @@ Example event content:
 
 Supported machine command families include:
 
+- `dsp.instances.list`
 - `connection.*`
 - `device.info.get`
 - `state.get`
 - `blocks.scan`
 - `block.read`
 - `channel.*`
+- `delay.unit.set`
+- `preset.*`
+- `meters.read`
 - `matrix.*`
 - `crossover.*`
+- `fir.mode.set`
+- `fir.generator.set`
+- `fir.upload`
 - `output.peq.*`
 - `input.peq.*`
 - `input.geq.*`
@@ -106,6 +132,26 @@ Supported machine command families include:
 - `limiter.set`
 - `testtone.*`
 - `volume.command`
+
+`dspId` may be supplied either at the top level or inside `args`. If it is omitted, the default DSP is used.
+
+Structured FIR408 example:
+
+```json
+{
+  "requestId": "req-002",
+  "dspId": "fir408",
+  "command": "fir.generator.set",
+  "args": {
+    "outputId": "out1",
+    "type": "lowpass",
+    "window": "hamming",
+    "hpHz": 0,
+    "lpHz": 120,
+    "taps": 512
+  }
+}
+```
 
 ## Build
 

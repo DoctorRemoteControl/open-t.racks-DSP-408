@@ -2,7 +2,9 @@ package de.drremote.dsp408controller.http;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import org.osgi.service.component.annotations.Component;
@@ -36,7 +38,9 @@ public final class DspApiServlet extends HttpServlet {
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         try {
-            String path = normalizePath(req.getPathInfo());
+            RequestContext context = requestContext(req);
+            String path = context.path();
+            DspService dsp = context.dsp();
 
             if (path.equals("/") || path.equals("/health")) {
                 writeJson(resp, 200, Map.of(
@@ -46,8 +50,16 @@ public final class DspApiServlet extends HttpServlet {
                 return;
             }
 
+            if (path.equals("/dsps")) {
+                writeJson(resp, 200, Map.of(
+                        "defaultDsp", dsp.dspId(),
+                        "dsps", dsp.getDspInstances()
+                ));
+                return;
+            }
+
             if (path.equals("/help")) {
-                writeJson(resp, 200, textResponse("help", dsp.helpText()));
+                writeJson(resp, 200, textResponse(dsp, "help", dsp.helpText()));
                 return;
             }
 
@@ -66,7 +78,7 @@ public final class DspApiServlet extends HttpServlet {
             }
 
             if (path.equals("/state") || path.equals("/status")) {
-                writeJson(resp, 200, stateResponse());
+                writeJson(resp, 200, stateResponse(dsp));
                 return;
             }
 
@@ -110,12 +122,12 @@ public final class DspApiServlet extends HttpServlet {
             }
 
             if (path.equals("/volume") || path.equals("/volume/status")) {
-                writeJson(resp, 200, textResponse("volume status", dsp.executeVolumeRoom("!dsp volume status")));
+                writeJson(resp, 200, textResponse(dsp, "volume status", dsp.executeVolumeRoom("!dsp volume status")));
                 return;
             }
 
             if (path.equals("/volume/help")) {
-                writeJson(resp, 200, textResponse("volume help", dsp.executeVolumeRoom("!dsp volume help")));
+                writeJson(resp, 200, textResponse(dsp, "volume help", dsp.executeVolumeRoom("!dsp volume help")));
                 return;
             }
 
@@ -131,7 +143,9 @@ public final class DspApiServlet extends HttpServlet {
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         try {
-            String path = normalizePath(req.getPathInfo());
+            RequestContext context = requestContext(req);
+            String path = context.path();
+            DspService dsp = context.dsp();
 
             if (path.equals("/connection/connect")) {
                 writeJson(resp, 200, actionResponse(dsp.connect()));
@@ -157,7 +171,7 @@ public final class DspApiServlet extends HttpServlet {
                 String text = "matrix".equalsIgnoreCase(mode)
                         ? dsp.executeMatrix(line, admin)
                         : dsp.executeShell(line);
-                writeJson(resp, 200, textResponse("command", text));
+                writeJson(resp, 200, textResponse(dsp, "command", text));
                 return;
             }
 
@@ -199,6 +213,38 @@ public final class DspApiServlet extends HttpServlet {
                         requireString(body, "output"),
                         requireString(body, "input"),
                         requireDouble(body, "db")
+                ));
+                return;
+            }
+
+            if (path.equals("/fir/mode")) {
+                Map<String, Object> body = readJsonBody(req);
+                writeJson(resp, 200, dsp.setFirProcessingMode(
+                        requireString(body, "output"),
+                        requireString(body, "mode")
+                ));
+                return;
+            }
+
+            if (path.equals("/fir/generator")) {
+                Map<String, Object> body = readJsonBody(req);
+                writeJson(resp, 200, dsp.setFirGenerator(
+                        requireString(body, "output"),
+                        requireString(body, "type"),
+                        requireString(body, "window"),
+                        requireDoubleAlias(body, "highPassFrequencyHz", "hpHz"),
+                        requireDoubleAlias(body, "lowPassFrequencyHz", "lpHz"),
+                        requireInt(body, "taps")
+                ));
+                return;
+            }
+
+            if (path.equals("/fir/upload")) {
+                Map<String, Object> body = readJsonBody(req);
+                writeJson(resp, 200, dsp.uploadExternalFir(
+                        requireString(body, "channel"),
+                        requireString(body, "name"),
+                        requireDoubleList(body, "coefficients")
                 ));
                 return;
             }
@@ -550,27 +596,27 @@ public final class DspApiServlet extends HttpServlet {
             }
 
             if (path.equals("/volume/up")) {
-                writeJson(resp, 200, textResponse("volume up", dsp.executeVolumeRoom("!dsp volume up")));
+                writeJson(resp, 200, textResponse(dsp, "volume up", dsp.executeVolumeRoom("!dsp volume up")));
                 return;
             }
 
             if (path.equals("/volume/down")) {
-                writeJson(resp, 200, textResponse("volume down", dsp.executeVolumeRoom("!dsp volume down")));
+                writeJson(resp, 200, textResponse(dsp, "volume down", dsp.executeVolumeRoom("!dsp volume down")));
                 return;
             }
 
             if (path.equals("/volume/mute")) {
-                writeJson(resp, 200, textResponse("volume mute", dsp.executeVolumeRoom("!dsp volume mute")));
+                writeJson(resp, 200, textResponse(dsp, "volume mute", dsp.executeVolumeRoom("!dsp volume mute")));
                 return;
             }
 
             if (path.equals("/volume/unmute")) {
-                writeJson(resp, 200, textResponse("volume unmute", dsp.executeVolumeRoom("!dsp volume unmute")));
+                writeJson(resp, 200, textResponse(dsp, "volume unmute", dsp.executeVolumeRoom("!dsp volume unmute")));
                 return;
             }
 
             if (path.equals("/volume/refresh")) {
-                writeJson(resp, 200, textResponse("volume refresh", dsp.executeVolumeRoom("!dsp volume refresh")));
+                writeJson(resp, 200, textResponse(dsp, "volume refresh", dsp.executeVolumeRoom("!dsp volume refresh")));
                 return;
             }
 
@@ -578,6 +624,7 @@ public final class DspApiServlet extends HttpServlet {
                 Map<String, Object> body = readJsonBody(req);
                 double db = requireDouble(body, "db");
                 writeJson(resp, 200, textResponse(
+                        dsp,
                         "volume set",
                         dsp.executeVolumeRoom("!dsp volume set " + db)
                 ));
@@ -589,6 +636,7 @@ public final class DspApiServlet extends HttpServlet {
                 double db = requireDouble(body, "db");
                 String signed = db >= 0 ? "+" + db : String.valueOf(db);
                 writeJson(resp, 200, textResponse(
+                        dsp,
                         "volume step",
                         dsp.executeVolumeRoom("!dsp volume step " + signed)
                 ));
@@ -604,8 +652,25 @@ public final class DspApiServlet extends HttpServlet {
         }
     }
 
-    private Map<String, Object> stateResponse() {
+    private RequestContext requestContext(HttpServletRequest req) {
+        String path = normalizePath(req.getPathInfo());
+        if (!path.startsWith("/dsps/")) {
+            return new RequestContext(dsp, path);
+        }
+
+        String rest = path.substring("/dsps/".length());
+        int slash = rest.indexOf('/');
+        String dspId = slash < 0 ? rest : rest.substring(0, slash);
+        String selectedPath = slash < 0 ? "/state" : rest.substring(slash);
+        if (selectedPath.isBlank()) {
+            selectedPath = "/state";
+        }
+        return new RequestContext(dsp.forDsp(dspId), normalizePath(selectedPath));
+    }
+
+    private Map<String, Object> stateResponse(DspService dsp) {
         return Map.of(
+                "dspId", dsp.dspId(),
                 "connected", dsp.isConnected(),
                 "deviceInfo", dsp.getDeviceInfo(),
                 "channels", dsp.getChannels(),
@@ -620,9 +685,10 @@ public final class DspApiServlet extends HttpServlet {
         );
     }
 
-    private Map<String, Object> textResponse(String command, String text) {
+    private Map<String, Object> textResponse(DspService dsp, String command, String text) {
         return Map.of(
                 "ok", true,
+                "dspId", dsp.dspId(),
                 "command", command,
                 "connected", dsp.isConnected(),
                 "text", text == null ? "" : text
@@ -659,6 +725,14 @@ public final class DspApiServlet extends HttpServlet {
         return toDouble(value);
     }
 
+    private double requireDoubleAlias(Map<String, Object> body, String field, String alias) {
+        Object value = body.containsKey(field) ? body.get(field) : body.get(alias);
+        if (value == null) {
+            throw new IllegalArgumentException("Missing " + field + ".");
+        }
+        return toDouble(value);
+    }
+
     private int requireInt(Map<String, Object> body, String field) {
         Object value = body.get(field);
         if (value == null) {
@@ -673,6 +747,34 @@ public final class DspApiServlet extends HttpServlet {
             throw new IllegalArgumentException("Missing " + field + ".");
         }
         return String.valueOf(value).trim();
+    }
+
+    private List<Double> requireDoubleList(Map<String, Object> body, String field) {
+        Object value = body.get(field);
+        if (value == null) {
+            throw new IllegalArgumentException("Missing " + field + ".");
+        }
+
+        List<Double> values = new ArrayList<>();
+        if (value instanceof Iterable<?> iterable) {
+            for (Object item : iterable) {
+                values.add(toDouble(item));
+            }
+        } else {
+            String text = String.valueOf(value).trim();
+            if (!text.isBlank()) {
+                for (String token : text.split("[,;\\s]+")) {
+                    if (!token.isBlank()) {
+                        values.add(Double.parseDouble(token));
+                    }
+                }
+            }
+        }
+
+        if (values.isEmpty()) {
+            throw new IllegalArgumentException("FIR coefficients are required.");
+        }
+        return values;
     }
 
     private boolean requireBoolean(Map<String, Object> body, String field) {
@@ -718,5 +820,8 @@ public final class DspApiServlet extends HttpServlet {
             return "/";
         }
         return path.trim();
+    }
+
+    private record RequestContext(DspService dsp, String path) {
     }
 }

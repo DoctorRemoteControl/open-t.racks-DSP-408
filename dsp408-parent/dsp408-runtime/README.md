@@ -11,12 +11,12 @@ OSGi Declarative Services runtime implementation of `DspService`.
 
 ## Purpose
 
-This bundle wires `dsp408-api` to `dsp408-core`. It owns one `DspController`, exposes it as an OSGi service and provides configuration for connecting to the physical DSP.
+This bundle wires `dsp408-api` to `dsp408-core`. It owns the default `DspController` and can manage additional named DSP controllers from configuration. The default controller is exposed through the existing single-DSP API; additional controllers are selected through `DspService.forDsp(id)`.
 
 ## Main Classes
 
-- `DspRuntimeComponent` - OSGi component implementing `DspService`.
-- `Dsp408Configuration` - metatype configuration for DSP IP/port and startup behavior.
+- `DspRuntimeComponent` - OSGi component implementing `DspService` and the named DSP pool.
+- `Dsp408Configuration` - metatype configuration for default DSP IP/port, additional DSPs and startup behavior.
 - `VolumeRoomHandler` - grouped InA-InD volume helper used by HTTP, shell and Matrix.
 
 ## Configuration PID
@@ -25,19 +25,38 @@ This bundle wires `dsp408-api` to `dsp408-core`. It owns one `DspController`, ex
 
 ## Configuration Properties
 
-- `dsp_ip` - DSP IPv4 address, default `192.168.0.166`.
-- `dsp_port` - DSP TCP port, default `9761`.
-- `auto_connect` - connect during component activation.
-- `auto_read_on_connect` - scan parameter blocks after connecting.
-- `volume_step_db` - default grouped volume step size.
+- `dsp.id` - default DSP id, default `main`.
+- `dsp.ip` - default DSP IPv4 address, default `192.168.0.166`.
+- `dsp.port` - default DSP TCP port, default `9761`.
+- `auto.connect` - connect configured DSPs during component activation.
+- `auto.read.on.connect` - scan parameter blocks after connecting.
+- `volume.step.db` - default grouped volume step size.
+- `dsps` - optional additional DSPs as `id=ip` or `id=ip:port`.
+
+The Java configuration methods use underscores, for example `dsp_id()`. In Karaf configuration those names are written with dots, for example `dsp.id`.
 
 ## Responsibilities
 
-- Open and close the TCP connection.
-- Maintain current `DspState`.
+- Open and close TCP connections.
+- Maintain one `DspState` per configured DSP.
 - Translate API calls into core controller calls.
 - Return DTOs and raw transmitted frame info.
 - Provide shell-compatible and Matrix-compatible command execution helpers.
+
+## Multi-DSP
+
+The old API methods target the default DSP. Use `getDspInstances()` to list configured devices and `forDsp("id")` to target a specific one.
+
+Example configuration:
+
+```text
+dsp.id = main
+dsp.ip = 192.168.0.166
+dsp.port = 9761
+auto.connect = true
+auto.read.on.connect = true
+dsps = normal408=192.168.0.170:9761,fir408=192.168.0.166:9761
+```
 
 ## Build
 

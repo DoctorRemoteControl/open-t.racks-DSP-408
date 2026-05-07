@@ -3,6 +3,7 @@ package de.drremote.dsp408controller.core.service;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.List;
 import java.util.function.Consumer;
 
 import de.drremote.dsp408controller.core.codec.DspCodecRegistry;
@@ -15,6 +16,9 @@ import de.drremote.dsp408controller.core.net.DspConnectionConfig;
 import de.drremote.dsp408controller.core.protocol.CrossoverSlope;
 import de.drremote.dsp408controller.core.protocol.DspChannel;
 import de.drremote.dsp408controller.core.protocol.DspProtocol;
+import de.drremote.dsp408controller.core.protocol.FirFilterType;
+import de.drremote.dsp408controller.core.protocol.FirProcessingMode;
+import de.drremote.dsp408controller.core.protocol.FirWindowFunction;
 import de.drremote.dsp408controller.core.protocol.PeqFilterType;
 import de.drremote.dsp408controller.core.state.CrossoverFilterState;
 import de.drremote.dsp408controller.core.state.DspState;
@@ -32,10 +36,11 @@ public final class DspController {
 	private static final String LOW_PASS_INCOMPLETE_MESSAGE = "Low-pass state incomplete. Output low-pass is readable, but input low-pass slope is not read back yet. Use xlpset first.";
 
 	private final DspState state = new DspState();
-	private final DspLibrary library;
+	private DspLibrary library;
 
 	private DspClient client;
 	private DspPayloadRouter router;
+	private Consumer<String> activeLog;
 	private String deviceVersion;
 	private byte[] lastSystemInfoPayload;
 
@@ -68,16 +73,31 @@ public final class DspController {
 				: Arrays.copyOf(lastSystemInfoPayload, lastSystemInfoPayload.length);
 	}
 
+	public String libraryType() {
+		return library.libraryType();
+	}
+
+	public int maxParameterBlockIndex() {
+		return library.maxParameterBlockIndex();
+	}
+
+	public boolean hasFirFeatures() {
+		return library.hasFirFeatures();
+	}
+
 	public void connect(DspConnectionConfig config, Consumer<String> log) throws IOException {
 		close();
 		state.reset();
 		deviceVersion = null;
 		lastSystemInfoPayload = null;
+		activeLog = log;
+		library = DspLibraryLoader.loadDefault();
 
 		client = new DspClient(config, log);
-		router = new DspPayloadRouter(state, log, this::updateDeviceVersion, this::updateSystemInfo, library);
+		router = createRouter(log);
 		client.setPayloadListener(router::onPayload);
 		client.connect();
+		sleepSilently(250);
 	}
 
 	public void close() {
@@ -86,6 +106,7 @@ public final class DspController {
 			client = null;
 		}
 		router = null;
+		activeLog = null;
 	}
 
 	public void sendHandshakeSequence() throws IOException {
@@ -351,6 +372,39 @@ public final class DspController {
 		state.markInputGeqBand(channel, bandIndex, normalizedGain, frequencyHz, "tx");
 	}
 
+	public void setFirProcessingMode(DspChannel output, FirProcessingMode mode) throws IOException {
+		requireFirLibrary();
+		requireOutputChannel(output);
+		requireClient().setFirProcessingMode(output, mode);
+	}
+
+	public void setFirGenerator(DspChannel output, FirFilterType type, FirWindowFunction window,
+			double highPassFrequencyHz, double lowPassFrequencyHz, int taps) throws IOException {
+		requireFirLibrary();
+		requireOutputChannel(output);
+
+		double normalizedHighPass = DspCodecRegistry.peqFrequency()
+				.rawToDouble(DspCodecRegistry.peqFrequency().doubleToRaw(highPassFrequencyHz));
+		double normalizedLowPass = DspCodecRegistry.peqFrequency()
+				.rawToDouble(DspCodecRegistry.peqFrequency().doubleToRaw(lowPassFrequencyHz));
+		int normalizedTaps = DspProtocol.firTapRawToCount(DspProtocol.firTapCountToRaw(taps));
+
+		requireClient().setFirGenerator(output, type, window, normalizedHighPass, normalizedLowPass, normalizedTaps);
+	}
+
+	public List<byte[]> uploadExternalFir(DspChannel channel, String name, double[] coefficients) throws IOException {
+		requireFirLibrary();
+		requireAnyChannel(channel);
+
+		boolean includeBeginCommand = channel.index() < 4;
+		List<byte[]> payloads = DspProtocol.buildExternalFirUpload(channel, name, coefficients, includeBeginCommand);
+		DspClient activeClient = requireClient();
+		for (byte[] payload : payloads) {
+			activeClient.sendPayload(payload);
+		}
+		return payloads;
+	}
+
 	public void setInputGate(DspChannel channel, double thresholdDb, double holdMs, double attackMs, double releaseMs)
 			throws IOException {
 		requireInput(channel);
@@ -480,6 +534,9 @@ public final class DspController {
 	public void setCompressor(DspChannel output, double thresholdDb, String ratioLabel, double attackMs,
 			double releaseMs, double kneeDb) throws IOException {
 		requireOutputChannel(output);
+		if (!library.hasOutputCompressorLocations()) {
+			throw new UnsupportedDspOperationException("Output compressor is not available in " + library.libraryType());
+		}
 
 		int ratioRaw = DspProtocol.compressorRatioLabelToRaw(ratioLabel);
 		String normalizedRatioLabel = library.compressorRatioName(ratioRaw);
@@ -541,7 +598,7 @@ public final class DspController {
 	}
 
 	public void scanParameterBlocks() throws IOException {
-		for (int i = 0x00; i <= 0x1C; i++) {
+		for (int i = 0x00; i <= library.maxParameterBlockIndex(); i++) {
 			readParameterBlock(i);
 			sleepSilently(150);
 		}
@@ -554,12 +611,41 @@ public final class DspController {
 		return client;
 	}
 
+	private void requireFirLibrary() {
+		if (!library.hasFirFeatures()) {
+			throw new UnsupportedDspOperationException("FIR features are not available in " + library.libraryType());
+		}
+	}
+
 	private void updateDeviceVersion(String version) {
 		this.deviceVersion = version;
+		selectLibraryForDeviceVersion(version);
 	}
 
 	private void updateSystemInfo(byte[] payload) {
 		this.lastSystemInfoPayload = payload == null ? null : Arrays.copyOf(payload, payload.length);
+	}
+
+	private DspPayloadRouter createRouter(Consumer<String> log) {
+		return new DspPayloadRouter(state, log, this::updateDeviceVersion, this::updateSystemInfo, library);
+	}
+
+	private void selectLibraryForDeviceVersion(String version) {
+		DspLibrary selected = DspLibraryLoader.loadForDeviceVersion(version);
+		if (selected.libraryType().equals(library.libraryType())) {
+			return;
+		}
+
+		library = selected;
+		Consumer<String> log = activeLog;
+		router = createRouter(log);
+		if (client != null) {
+			client.setPayloadListener(router::onPayload);
+		}
+		if (log != null) {
+			log.accept("DSP library selected: " + library.libraryType()
+					+ " blocks=00.." + String.format("%02X", library.maxParameterBlockIndex()));
+		}
 	}
 
 	private static void sleepSilently(long ms) {

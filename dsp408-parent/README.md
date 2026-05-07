@@ -1,6 +1,6 @@
 # DSP408Controller
 
-DSP408Controller is a Java 21 multi-module project for controlling and inspecting a **t.racks / Thomann DSP 408** over TCP.
+DSP408Controller is a Java 21 multi-module project for controlling and inspecting **t.racks / Thomann DSP 408** and **FIR408** devices over TCP.
 
 The project is built around an **Apache Karaf / OSGi** runtime and currently includes:
 
@@ -18,11 +18,14 @@ The current codebase is focused on **practical control + reverse engineering sup
 * send handshake and keepalive frames
 * request device/system information
 * send a 4-digit login PIN
+* auto-detect DSP408 vs FIR408 libraries after handshake
+* address multiple DSPs by configured id
 * set gain for all inputs and outputs
 * mute / unmute all inputs and outputs
-* read parameter blocks `00..1C`
+* read parameter blocks `00..1C` on DSP408 and `00..1F` on FIR408
 * cache raw block contents
-* decode known gain and mute values from selected blocks
+* decode known gain, mute, matrix, crossover and related values from selected blocks
+* control FIR408 mode/generator/external FIR payloads
 * expose the same functionality via shell, Matrix and HTTP
 
 ---
@@ -45,11 +48,10 @@ It intentionally does **not** describe DSP editing features that are not impleme
 
 The canonical reverse-engineering and field-library reference for this project is:
 
-* `../DspLib-408.json`
+* `docs/protocol-spec/DspLib-408.json`
+* `docs/protocol-spec/DspLib-408-fir.json`
 
-This `DspLib-408.json` file is the current standard for DSP408 protocol field knowledge in this repository.
-
-Files under `docs/protocol-spec/` remain useful as legacy working notes, partial experiments, or historical snapshots, but they are no longer the primary specification source.
+Runtime copies are bundled in `dsp408-core/src/main/resources/dsp/`. The Java loader selects the normal or FIR library according to the detected device version.
 
 ---
 
@@ -145,8 +147,10 @@ Important class:
 Matrix bot integration with:
 
 * control room for full `!dsp ...` commands
+* explicit multi-DSP targeting with `!dsp dsp <id> <command>`
 * volume room for grouped input volume handling
-* machine room for structured Matrix events
+* machine room for structured Matrix events with optional `dspId`
+* structured FIR408 machine commands
 
 Important classes:
 
@@ -342,11 +346,13 @@ de.drremote.dsp408controller
 
 | Property               | Meaning                                         |
 | ---------------------- | ----------------------------------------------- |
-| `dsp.ip`               | DSP IP address                                  |
-| `dsp.port`             | DSP TCP port                                    |
+| `dsp.id`               | default DSP id                                  |
+| `dsp.ip`               | default DSP IP address                          |
+| `dsp.port`             | default DSP TCP port                            |
 | `auto.connect`         | connect automatically when the component starts |
 | `auto.read.on.connect` | scan parameter blocks after connect             |
 | `volume.step.db`       | default step for grouped volume up/down         |
+| `dsps`                 | optional additional DSPs as `id=ip[:port]`      |
 
 ### Runtime Behavior
 
@@ -354,6 +360,13 @@ de.drremote.dsp408controller
 * If the configured DSP IP or port changes while connected, the component reconnects automatically.
 * `connect()` always uses the current OSGi configuration.
 * If `auto.read.on.connect=true`, a full parameter block scan runs after a successful connect.
+* Old APIs use the default DSP. Multi-DSP APIs use `/api/v1/dsps/{id}/...`.
+
+Example additional DSPs:
+
+```text
+dsps = fir1=192.168.0.167:9761,room2=192.168.0.168:9761
+```
 
 ---
 
@@ -369,6 +382,11 @@ dsp408
 
 ```bash
 dsp408:help
+dsp408:dsps
+dsp408:select main
+dsp408:current
+dsp408:dsp fir408 state
+dsp408:dsp normal408 gain out1 -10
 dsp408:connect
 dsp408:disconnect
 dsp408:reconnect
@@ -471,8 +489,7 @@ peqgcode <outX> <peq> <code>
 * `refresh` is effectively a block scan followed by formatted state output.
 * `connect` uses only the configured OSGi target, not ad-hoc IP/port parameters.
 * `raw` sends an unframed payload and the code automatically wraps it in DSP framing.
-* In **Matrix mode**, `raw` is disabled.
-* In **Matrix mode**, `connect`, `disconnect` and `reconnect` are admin-only.
+* In **Matrix mode**, `connect`, `disconnect`, `reconnect`, `raw` and `sendraw` are admin-only.
 
 ---
 
@@ -732,8 +749,11 @@ Commands must start with:
 
 ```text
 !dsp help
+!dsp dsps
 !dsp connect
 !dsp state
+!dsp dsp fir408 state
+!dsp dsp normal408 gain out1 -10
 !dsp gain ina -10
 !dsp mute out1
 !dsp readblock 1C
@@ -743,8 +763,8 @@ Commands must start with:
 ### Permissions
 
 * sender must be in `allowed.users` or `admin.users`
-* `connect`, `disconnect`, `reconnect` require admin rights in Matrix mode
-* `raw` is disabled in Matrix mode
+* `connect`, `disconnect`, `reconnect`, `raw` and `sendraw` require admin rights in Matrix mode
+* commands without `dsp <id>` target the default DSP
 
 ---
 
@@ -819,6 +839,7 @@ Allowed senders must be in:
 ### Supported machine commands
 
 ```text
+dsp.instances.list
 connection.connect
 connection.disconnect
 connection.reconnect
@@ -829,6 +850,11 @@ block.read
 channel.get
 channel.gain.set
 channel.mute.set
+matrix.route.set
+crossover.hp.set
+fir.mode.set
+fir.generator.set
+fir.upload
 ```
 
 ### Mapping examples
@@ -843,6 +869,10 @@ channel.mute.set
 | `channel.get`        | `!dsp get <channelId>`                              |
 | `channel.gain.set`   | `!dsp gain <channelId> <db>`                        |
 | `channel.mute.set`   | `!dsp mute <channelId>` / `!dsp unmute <channelId>` |
+| `fir.mode.set`       | `!dsp firmode <outputId> <iir|fir>`                 |
+| `fir.generator.set`  | `!dsp firgen <outputId> <type> <window> <hpHz> <lpHz> <taps>` |
+
+Machine requests may include `dspId` at the top level or inside `args`. If omitted, the default DSP is used.
 
 ### Example request
 
@@ -850,6 +880,7 @@ channel.mute.set
 {
   "apiVersion": "1.0",
   "requestId": "123",
+  "dspId": "fir408",
   "command": "channel.gain.set",
   "args": {
     "channelId": "ina",
@@ -865,6 +896,7 @@ channel.mute.set
   "apiVersion": "1.0",
   "requestId": "123",
   "ok": true,
+  "dspId": "fir408",
   "command": "channel.gain.set",
   "mappedCommand": "!dsp gain ina -10",
   "result": {
@@ -880,6 +912,7 @@ channel.mute.set
   "apiVersion": "1.0",
   "requestId": "123",
   "ok": false,
+  "dspId": "fir408",
   "error": {
     "message": "..."
   }
@@ -1069,8 +1102,9 @@ Typical log output includes:
 2. Add the features repo in Karaf
 3. Install dsp408-runtime + dsp408-shell
 4. Configure PID de.drremote.dsp408controller
-5. Run dsp408:connect
-6. Use state / gain / mute / refresh / blocks
+5. Run dsp408:dsps and dsp408:connect
+6. Use dsp408:select <id> for an interactive target or dsp408:dsp <id> <command> for one command
+7. Use state / gain / mute / refresh / blocks
 ```
 
 ### HTTP workflow
@@ -1104,23 +1138,23 @@ The current implementation is intentionally focused on:
 * transport and connection handling
 * handshake / keepalive / sysinfo
 * login PIN
-* gain write
-* mute write
-* block reads
+* gain, mute, phase/polarity, delay and limiter writes
+* crossover HP/LP editing
+* routing and matrix crosspoint editing
+* input/output PEQ writes and partial read-backed state
+* FIR408 mode, generator and external FIR upload commands
+* DSP408 and FIR408 protocol library selection
+* single-DSP and multi-DSP access over shell / Matrix / HTTP
+* parameter block reads
 * state caching
-* known gain + mute decoding
-* shell / Matrix / HTTP access to the same runtime service
+* known semantic decoding for implemented controls
 
-Not implemented in the current codebase:
+Still incomplete in the current codebase:
 
-* full semantic decode of all parameter blocks
-* PEQ readback/state modeling
-* crossover editing
-* routing editing
-* delay editing
-* limiter editing
-* polarity editing
-* a complete high-level DSP editor
+* full semantic decode of every byte in every parameter block
+* complete PEQ readback/state coverage for every PEQ field and variant
+* a complete high-level DSP editor UI
+* end-to-end operation tests with multiple physical DSPs at different IPs
 
 Unknown block contents are still cached and can be inspected with:
 
@@ -1165,13 +1199,14 @@ or the HTTP gain endpoint for each channel.
 
 ## Summary
 
-DSP408Controller is currently a solid Java/Karaf control layer for the DSP408 with:
+DSP408Controller is currently a solid Java/Karaf control layer for DSP408/FIR408 devices with:
 
 * a reusable protocol core
 * a runtime OSGi service
+* named multi-DSP routing
 * Karaf shell access
 * Matrix integration
 * an HTTP/JSON API
 * raw block visibility for reverse engineering
 
-It is already useful for daily gain/mute/state tasks and provides a good foundation for deeper DSP reverse engineering and future editing features.
+It is already useful for daily control tasks and provides a good foundation for deeper DSP reverse engineering, broader readback decoding and future editor UI work.
